@@ -21,17 +21,44 @@ function Invoke-Checked {
     [string]$FailureMessage
   )
 
-  & $Command
-  if ($LASTEXITCODE -ne 0) {
-    throw $FailureMessage
+  # Windows PowerShell 5.1 can convert native stderr into a terminating
+  # NativeCommandError when ErrorActionPreference is Stop. Run native commands
+  # with Continue locally, then check their real process exit code ourselves.
+  $PreviousPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & $Command
+    $ExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $PreviousPreference
   }
+
+  if ($ExitCode -ne 0) {
+    throw "$FailureMessage Exit code: $ExitCode"
+  }
+}
+
+function Test-GhCommand([string]$Arguments) {
+  # Missing repositories and missing Pages sites are expected probe results.
+  # Running the probe through cmd.exe prevents their stderr from becoming a
+  # terminating PowerShell NativeCommandError.
+  & $env:ComSpec /d /s /c "gh $Arguments >nul 2>nul"
+  return ($LASTEXITCODE -eq 0)
 }
 
 Require-Command "git"
 Require-Command "gh"
 
-$Owner = gh api user --jq .login
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($Owner)) {
+$PreviousPreference = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
+try {
+  $Owner = gh api user --jq .login 2>$null
+  $OwnerExitCode = $LASTEXITCODE
+} finally {
+  $ErrorActionPreference = $PreviousPreference
+}
+
+if ($OwnerExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($Owner)) {
   throw "GitHub login could not be confirmed. Run: gh auth login"
 }
 
@@ -59,10 +86,12 @@ if ($HasChanges) {
 
 Write-Host "[3/5] Creating or connecting the GitHub repository"
 $FullName = "$Owner/$RepoName"
-gh repo view $FullName --json name 2>$null | Out-Null
-$RepoExists = ($LASTEXITCODE -eq 0)
+$RepoExists = Test-GhCommand "repo view $FullName --json name"
 
-if (-not $RepoExists) {
+if ($RepoExists) {
+  Write-Host "GitHub repository already exists: $FullName"
+} else {
+  Write-Host "Creating GitHub repository: $FullName"
   $VisibilityFlag = "--$Visibility"
   Invoke-Checked {
     gh repo create $FullName $VisibilityFlag --description "Browser-based 3D soulslike developed in ten passes"
@@ -70,8 +99,13 @@ if (-not $RepoExists) {
 }
 
 $RemoteUrl = "https://github.com/$FullName.git"
-git remote get-url origin 2>$null | Out-Null
-if ($LASTEXITCODE -eq 0) {
+$OriginExists = Test-GhCommand "repo view $FullName --json name"
+if (-not $OriginExists) {
+  throw "The GitHub repository is still unavailable after creation: $FullName"
+}
+
+$RemoteNames = @(git remote)
+if ($RemoteNames -contains "origin") {
   Invoke-Checked { git remote set-url origin $RemoteUrl } "Could not update the origin remote."
 } else {
   Invoke-Checked { git remote add origin $RemoteUrl } "Could not add the origin remote."
@@ -81,17 +115,30 @@ Invoke-Checked { git push -u origin main } "Push to GitHub failed."
 
 Write-Host "[4/5] Configuring GitHub Pages for Actions"
 $PagesConfigured = $false
-gh api "repos/$FullName/pages" 2>$null | Out-Null
-if ($LASTEXITCODE -eq 0) {
-  gh api --method PUT "repos/$FullName/pages" -f build_type=workflow 2>$null | Out-Null
-  $PagesConfigured = ($LASTEXITCODE -eq 0)
+$PagesExists = Test-GhCommand "api repos/$FullName/pages"
+
+if ($PagesExists) {
+  $PreviousPreference = $ErrorActionPreference
+  $ErrorActionPreference = "SilentlyContinue"
+  try {
+    gh api --method PUT "repos/$FullName/pages" -f build_type=workflow 1>$null 2>$null
+    $PagesConfigured = ($LASTEXITCODE -eq 0)
+  } finally {
+    $ErrorActionPreference = $PreviousPreference
+  }
 } else {
-  gh api --method POST "repos/$FullName/pages" -f build_type=workflow 2>$null | Out-Null
-  $PagesConfigured = ($LASTEXITCODE -eq 0)
+  $PreviousPreference = $ErrorActionPreference
+  $ErrorActionPreference = "SilentlyContinue"
+  try {
+    gh api --method POST "repos/$FullName/pages" -f build_type=workflow 1>$null 2>$null
+    $PagesConfigured = ($LASTEXITCODE -eq 0)
+  } finally {
+    $ErrorActionPreference = $PreviousPreference
+  }
 }
 
 if (-not $PagesConfigured) {
-  Write-Warning "Pages could not be configured automatically. In the repository, open Settings > Pages and select GitHub Actions."
+  Write-Warning "Pages could not be configured automatically. Open Settings > Pages and select GitHub Actions."
 }
 
 Write-Host "[5/5] Complete"
