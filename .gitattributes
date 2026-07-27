@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.ps1 text eol=crlf
+
+# 실제 3D 모델과 음원이 들어오는 차수에서 Git LFS를 별도로 활성화한다.
