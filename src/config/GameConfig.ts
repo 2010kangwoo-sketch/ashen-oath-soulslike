@@ -1,6 +1,6 @@
 export const GAME_CONFIG = {
   title: 'Ashen Oath',
-  pass: 3,
+  pass: 5,
   renderer: {
     maxPixelRatio: 1.65,
     shadowMapSize: 2048,
@@ -87,6 +87,11 @@ export const GAME_CONFIG = {
     parryDuration: 0.64,
     parryWindowStart: 0.1,
     parryWindowEnd: 0.235,
+    healDuration: 1.48,
+    healImpactTime: 0.84,
+    healAmount: 74,
+    flaskCapacity: 3,
+    respawnDelay: 2.65,
   },
   combat: {
     lockSearchAngleCos: -0.18,
@@ -146,6 +151,9 @@ export const GAME_CONFIG = {
   },
   world: {
     seed: 80717,
-    ashCount: 720,
+    ashCount: 880,
+    recoveryRadius: 1.55,
+    interactionRadius: 2.35,
+    threatRadius: 8.5,
   },
 } as const;

@@ -87,6 +87,7 @@ const ATTACKS: Record<SentinelAttackId, SentinelAttackProfile> = {
 
 export class AshenSentinel implements CombatEnemy {
   readonly root = new THREE.Group();
+  readonly ashReward: number;
   private readonly rig = new THREE.Group();
   private readonly torso = new THREE.Group();
   private readonly weaponPivot = new THREE.Group();
@@ -121,6 +122,7 @@ export class AshenSentinel implements CombatEnemy {
   private verticalVelocity = 0;
   private grounded = false;
   private gait = 0;
+  private attackAllowed = true;
 
   constructor(
     scene: THREE.Scene,
@@ -132,8 +134,9 @@ export class AshenSentinel implements CombatEnemy {
     private readonly variant = 0,
   ) {
     this.spawn = spawn.clone();
-    this.maxHealth = variant === 0 ? 142 : 126;
-    this.maxPoise = variant === 0 ? 82 : 68;
+    this.maxHealth = variant === 2 ? 285 : variant === 0 ? 142 : 126;
+    this.maxPoise = variant === 2 ? 154 : variant === 0 ? 82 : 68;
+    this.ashReward = variant === 2 ? 260 : variant === 0 ? 74 : 62;
     this.health = this.maxHealth;
 
     this.body = physics.world.createRigidBody(
@@ -156,7 +159,7 @@ export class AshenSentinel implements CombatEnemy {
     scene.add(this.root);
 
     this.armorMaterial = new THREE.MeshStandardMaterial({
-      color: variant === 0 ? 0x2b3032 : 0x34302d,
+      color: variant === 2 ? 0x4a4038 : variant === 0 ? 0x2b3032 : 0x34302d,
       roughness: 0.48,
       metalness: 0.78,
       emissive: 0x000000,
@@ -243,7 +246,7 @@ export class AshenSentinel implements CombatEnemy {
     shieldBoss.position.set(-0.08, -0.26, -0.58);
     this.shieldPivot.add(shieldBoss);
 
-    this.rig.scale.setScalar(variant === 0 ? 1.04 : 0.98);
+    this.rig.scale.setScalar(variant === 2 ? 1.18 : variant === 0 ? 1.04 : 0.98);
   }
 
   fixedUpdate(delta: number, playerPosition: THREE.Vector3): void {
@@ -284,11 +287,11 @@ export class AshenSentinel implements CombatEnemy {
       this.stateTimer += delta;
       this.poise = Math.max(0, this.poise - delta * 5.5);
       if (distance > 2.65) {
-        const speed = distance > 7 ? 2.4 : 1.72;
+        const speed = this.variant === 2 ? (distance > 7 ? 2.75 : 2.05) : distance > 7 ? 2.4 : 1.72;
         const sideBias = this.variant === 1 && distance < 5.2 ? Math.sin(this.visualTime * 1.7) * 0.34 : 0;
         this.scratch.set(this.toPlayer.z, 0, -this.toPlayer.x);
         this.horizontalStep.copy(this.toPlayer).addScaledVector(this.scratch, sideBias).normalize().multiplyScalar(speed * delta);
-      } else if (this.stateTimer >= 0) {
+      } else if (this.stateTimer >= 0 && this.attackAllowed) {
         this.chooseAttack(distance);
       }
     } else {
@@ -475,6 +478,7 @@ export class AshenSentinel implements CombatEnemy {
     this.facingYaw = 0;
     this.verticalVelocity = 0;
     this.grounded = false;
+    this.attackAllowed = true;
   }
 
   consumeAttackPulse(): AttackPulse | null {
@@ -497,11 +501,15 @@ export class AshenSentinel implements CombatEnemy {
 
   getPosition(target: THREE.Vector3): THREE.Vector3 { return target.copy(this.root.position); }
   isActive(): boolean { return this.state !== 'dead'; }
+  isCommittedAttack(): boolean { return this.state === 'windup' || this.state === 'active' || this.state === 'recovery'; }
+  setAttackAllowed(allowed: boolean): void { this.attackAllowed = allowed; }
 
   private chooseAttack(distance: number): void {
-    const sequence: readonly SentinelAttackId[] = this.variant === 0
-      ? ['overhead', 'shieldBash', 'sweep', 'lunge']
-      : ['sweep', 'lunge', 'shieldBash', 'overhead'];
+    const sequence: readonly SentinelAttackId[] = this.variant === 2
+      ? ['shieldBash', 'sweep', 'overhead', 'lunge', 'sweep']
+      : this.variant === 0
+        ? ['overhead', 'shieldBash', 'sweep', 'lunge']
+        : ['sweep', 'lunge', 'shieldBash', 'overhead'];
     const chosen = sequence[this.attackCycle % sequence.length];
     this.attack = distance > 3.1 ? 'lunge' : chosen ?? 'overhead';
     this.attackCycle += 1;

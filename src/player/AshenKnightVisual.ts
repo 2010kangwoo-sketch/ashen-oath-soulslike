@@ -12,6 +12,7 @@ export type KnightVisualState =
   | 'heavyCharge'
   | 'heavy'
   | 'execute'
+  | 'heal'
   | 'guard'
   | 'parry'
   | 'stagger'
@@ -346,6 +347,21 @@ export class AshenKnightVisual {
       swordZ = THREE.MathUtils.lerp(-0.24, 0.1, smash);
       headX = THREE.MathUtils.lerp(-0.1, 0.08, smash);
       trailOpacity = attackTrail(actionProgress, 0.45, 0.72) * 1.25;
+    } else if (state === 'heal') {
+      const raise = THREE.MathUtils.smoothstep(actionProgress, 0.04, 0.38);
+      const drink = THREE.MathUtils.smoothstep(actionProgress, 0.36, 0.68);
+      torsoX = -0.08 + drink * 0.12;
+      torsoY = -0.18 * raise;
+      chestY = 0.12 * raise;
+      headX = -0.08 - drink * 0.16;
+      headY = 0.06;
+      rightArmX = -1.16 * raise + 0.42 * drink;
+      rightArmZ = -0.34;
+      rightElbowX = -1.08 * raise;
+      leftArmX = -0.22;
+      leftElbowX = -0.3;
+      swordX = 0.4;
+      swordZ = -0.5;
     } else if (state === 'guard') {
       torsoX = 0.075;
       torsoY = -0.11;
@@ -452,6 +468,7 @@ export class AshenKnightVisual {
         + THREE.MathUtils.clamp(this.speedAcceleration * 0.012, -0.12, 0.18)
         + (state === 'dodge' ? 0.4 : 0)
         + (state === 'heavy' || state === 'execute' ? 0.16 : 0)
+        + (state === 'heal' ? 0.05 : 0)
         + (state === 'heavyCharge' ? chargeRatio * 0.08 : 0);
       panel.rotation.z = -turnRate * 0.017 + (index - 3) * 0.01;
     }

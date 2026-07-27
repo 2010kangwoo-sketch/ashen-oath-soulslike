@@ -64,6 +64,7 @@ const ATTACKS: Record<HoundAttackId, HoundAttackProfile> = {
 
 export class AshenHound implements CombatEnemy {
   readonly root = new THREE.Group();
+  readonly ashReward = 56;
   private readonly rig = new THREE.Group();
   private readonly bodyPivot = new THREE.Group();
   private readonly headPivot = new THREE.Group();
@@ -97,6 +98,7 @@ export class AshenHound implements CombatEnemy {
   private grounded = false;
   private visualTime = 0;
   private gait = 0;
+  private attackAllowed = true;
   private hitFlash = 0;
 
   constructor(
@@ -243,7 +245,7 @@ export class AshenHound implements CombatEnemy {
       this.tangent.set(this.toPlayer.z * this.side, 0, -this.toPlayer.x * this.side);
       const radialCorrection = THREE.MathUtils.clamp((distance - 3.15) * 0.8, -0.65, 0.65);
       this.horizontalStep.copy(this.tangent).addScaledVector(this.toPlayer, radialCorrection).normalize().multiplyScalar(2.7 * delta);
-      if (this.stateTimer >= 0.72 && distance < 4.6) {
+      if (this.attackAllowed && this.stateTimer >= 0.72 && distance < 4.6) {
         this.attack = distance > 2.45 ? 'pounce' : 'bite';
         this.state = 'windup';
         this.stateTimer = 0;
@@ -410,6 +412,7 @@ export class AshenHound implements CombatEnemy {
     this.facingYaw = 0;
     this.verticalVelocity = 0;
     this.grounded = false;
+    this.attackAllowed = true;
     this.hitFlash = 0;
   }
 
@@ -433,6 +436,8 @@ export class AshenHound implements CombatEnemy {
 
   getPosition(target: THREE.Vector3): THREE.Vector3 { return target.copy(this.root.position); }
   isActive(): boolean { return this.state !== 'dead'; }
+  isCommittedAttack(): boolean { return this.state === 'windup' || this.state === 'active' || this.state === 'recovery'; }
+  setAttackAllowed(allowed: boolean): void { this.attackAllowed = allowed; }
 
   private emitAttackPulse(profile: HoundAttackProfile): void {
     if (this.attackPulseEmitted) return;

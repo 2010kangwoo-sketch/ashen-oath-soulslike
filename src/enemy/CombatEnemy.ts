@@ -4,6 +4,7 @@ import type { AttackPulse, EnemyDamageResult, LockTargetSnapshot } from '../comb
 export interface CombatEnemy {
   readonly id: string;
   readonly displayName: string;
+  readonly ashReward: number;
   readonly root: THREE.Group;
   fixedUpdate(delta: number, playerPosition: THREE.Vector3): void;
   updateVisual(delta: number): void;
@@ -11,6 +12,8 @@ export interface CombatEnemy {
   getLockSnapshot(): LockTargetSnapshot;
   getPosition(target: THREE.Vector3): THREE.Vector3;
   isActive(): boolean;
+  isCommittedAttack(): boolean;
+  setAttackAllowed(allowed: boolean): void;
   isExecutable(playerPosition: THREE.Vector3): boolean;
   beginExecution(): void;
   finishExecution(): void;

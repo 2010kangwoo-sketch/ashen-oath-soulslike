@@ -6,6 +6,7 @@ import { GAME_CONFIG } from '../config/GameConfig';
 import { InputController } from '../input/InputController';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { PlayerController } from '../player/PlayerController';
+import { ProgressionDirector } from '../progression/ProgressionDirector';
 import { RenderPipeline } from '../render/RenderPipeline';
 import { GameHud } from '../ui/GameHud';
 import { CathedralApproach } from '../world/CathedralApproach';
@@ -33,6 +34,7 @@ export class Game {
   private world!: CathedralApproach;
   private player!: PlayerController;
   private combat!: CombatDirector;
+  private progression!: ProgressionDirector;
   private animationFrame = 0;
   private disposed = false;
   private hitStopRemaining = 0;
@@ -55,6 +57,7 @@ export class Game {
     this.input = new InputController(this.canvas);
     this.player = new PlayerController(this.scene, this.physics, this.audio);
     this.combat = new CombatDirector(this.scene, this.physics, this.audio);
+    this.progression = new ProgressionDirector(this.scene, this.physics, this.audio);
     this.cameraRig = new ThirdPersonCamera(this.camera, this.canvas, this.world.cameraCollisionObjects);
     this.pipeline = new RenderPipeline(this.renderer, this.scene, this.camera);
     this.resizeRenderer();
@@ -169,7 +172,7 @@ export class Game {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat) return;
-    if (event.code === 'KeyR') {
+    if (event.code === 'F8') {
       this.player.reset();
       this.combat.reset();
     }
@@ -193,7 +196,10 @@ export class Game {
     this.cameraRig.copyPlanarForward(this.planarForward);
     this.cameraRig.copyPlanarRight(this.planarRight);
     this.combat.handleTargeting(this.input, this.player, this.planarForward);
-    this.combat.handleExecution(this.input, this.player);
+    if (this.input.consumeAction('interact')) {
+      const executed = this.combat.tryExecution(this.player);
+      if (!executed) this.progression.tryInteract(this.player, this.combat);
+    }
 
     this.hitStopRemaining = Math.max(0, this.hitStopRemaining - delta);
     if (this.hitStopRemaining <= 0) {
@@ -211,6 +217,7 @@ export class Game {
     this.world.update(delta);
     this.player.updateVisual(presentationDelta);
     this.combat.updateVisual(presentationDelta);
+    this.progression.update(delta, this.player, this.combat);
     this.player.getCameraTarget(this.cameraTarget);
     this.player.copyVelocity(this.playerVelocity);
     this.player.getWorldPosition(this.playerPosition);
@@ -233,6 +240,7 @@ export class Game {
     this.hud.setCharge(this.player.getChargeRatio());
     this.hud.setLockTarget(this.combat.getLockSnapshot(), this.camera);
     this.hud.setDeathState(this.player.isDead());
+    this.hud.setProgression(this.progression.getSnapshot(this.player));
     this.hud.setPointerLocked(this.cameraRig.isLocked());
     this.pipeline.render(delta);
   };

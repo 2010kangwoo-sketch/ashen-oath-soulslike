@@ -29,15 +29,20 @@
           <div class="vital-row"><span class="vital-icon stamina-icon"></span><div class="vital-track stamina"><span id="stamina-fill"></span></div></div>
         </div>
 
-        <div class="area-title" aria-live="polite">
+        <div id="area-title" class="area-title" aria-live="polite">
           <p>무너진 왕도의 변두리</p>
-          <h1>대성당 진입로</h1>
+          <h1 id="area-title-name">대성당 진입로</h1>
           <span></span>
         </div>
 
         <div class="objective-panel">
           <p class="eyebrow">현재 서약</p>
-          <p>봉인된 대성당의 문에 도달하라</p>
+          <p id="objective-text">종루 회랑으로 이어지는 길을 찾아라</p>
+        </div>
+
+        <div class="resource-panel" aria-label="재화와 회복병">
+          <div class="flask-display"><span class="flask-glyph"></span><strong id="flask-count">3</strong><small>회복병</small></div>
+          <div class="ash-display"><span class="ash-glyph"></span><strong id="ash-count">0</strong><small>재</small></div>
         </div>
 
         <div id="lock-target-panel" class="lock-target-panel is-hidden" aria-live="polite">
@@ -49,12 +54,15 @@
         <div id="lock-reticle" class="lock-reticle is-hidden" aria-hidden="true"><span></span></div>
 
         <div id="execution-prompt" class="execution-prompt is-hidden"><kbd>E</kbd><span>처형</span></div>
+        <div id="interaction-prompt" class="interaction-prompt is-hidden"></div>
+        <div id="notice-panel" class="notice-panel is-hidden" role="status"></div>
 
         <div id="charge-meter" class="charge-meter is-hidden"><span id="charge-fill"></span></div>
 
         <div id="death-panel" class="death-panel is-hidden" role="status">
           <p>서약이 꺾였습니다</p>
-          <span><kbd>R</kbd> 전투 재시작</span>
+          <span id="death-subtitle">마지막 서약석으로 돌아갑니다</span>
+          <div class="death-progress"><span id="death-progress-fill"></span></div>
         </div>
 
         <div id="pointer-hint" class="pointer-hint">
@@ -67,7 +75,8 @@
           <p><kbd>Space</kbd><span>회피</span></p>
           <p><kbd>LMB / Shift+LMB</kbd><span>3연계 / 차지 강공격</span></p>
           <p><kbd>RMB / F</kbd><span>방어 / 패링</span></p>
-          <p><kbd>Q / E</kbd><span>록온 / 처형</span></p>
+          <p><kbd>Q / E</kbd><span>록온 / 상호작용·처형</span></p>
+          <p><kbd>R</kbd><span>회복병 사용</span></p>
           <p><kbd>Mouse</kbd><span>시점</span></p>
           <p><kbd>H</kbd><span>안내 숨김</span></p>
         </div>

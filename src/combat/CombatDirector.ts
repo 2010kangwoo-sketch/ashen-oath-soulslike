@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import type { AudioDirector } from '../audio/AudioDirector';
 import { GAME_CONFIG } from '../config/GameConfig';
 import { AshenHound } from '../enemy/AshenHound';
+import { AshenSpearman } from '../enemy/AshenSpearman';
+import { BellKeeper } from '../enemy/BellKeeper';
 import type { CombatEnemy } from '../enemy/CombatEnemy';
 import { AshenSentinel } from '../enemy/AshenSentinel';
 import { InputController } from '../input/InputController';
@@ -21,6 +23,8 @@ export class CombatDirector {
   private executingEnemy: CombatEnemy | null = null;
   private cameraImpulse = 0;
   private hitStop = 0;
+  private pendingAshReward = 0;
+  private readonly rewardedEnemies = new Set<string>();
 
   constructor(
     scene: THREE.Scene,
@@ -29,42 +33,16 @@ export class CombatDirector {
   ) {
     this.effects = new CombatEffects(scene);
     this.enemies = [
-      new AshenSentinel(
-        scene,
-        physics,
-        'gate-sentinel',
-        '잿빛 문지기',
-        new THREE.Vector3(0, 1.12, 5.5),
-        audio,
-        0,
-      ),
-      new AshenSentinel(
-        scene,
-        physics,
-        'east-sentinel',
-        '부서진 방패의 기사',
-        new THREE.Vector3(7.4, 1.12, -7.5),
-        audio,
-        1,
-      ),
-      new AshenHound(
-        scene,
-        physics,
-        'west-hound',
-        '재를 핥는 사냥개',
-        new THREE.Vector3(-6.8, 0.82, -2.6),
-        audio,
-        1,
-      ),
-      new AshenHound(
-        scene,
-        physics,
-        'nave-hound',
-        '종지기의 사냥개',
-        new THREE.Vector3(4.8, 0.82, -19.6),
-        audio,
-        -1,
-      ),
+      new AshenSentinel(scene, physics, 'gate-sentinel', '잿빛 문지기', new THREE.Vector3(0, 1.12, 5.5), audio, 0),
+      new AshenHound(scene, physics, 'west-hound', '재를 핥는 사냥개', new THREE.Vector3(-6.8, 0.82, -2.6), audio, 1),
+      new AshenSpearman(scene, physics, 'processional-spearman', '서약을 잃은 창병', new THREE.Vector3(6.4, 1.12, -4.8), audio, -1),
+      new AshenSentinel(scene, physics, 'east-sentinel', '부서진 방패의 기사', new THREE.Vector3(7.4, 1.12, -12.5), audio, 1),
+      new AshenHound(scene, physics, 'nave-hound', '종지기의 사냥개', new THREE.Vector3(4.8, 1.34, -20.6), audio, -1),
+      new BellKeeper(scene, physics, 'forecourt-bellkeeper', '침묵한 종지기', new THREE.Vector3(-5.4, 1.34, -25.4), audio, false),
+      new AshenSpearman(scene, physics, 'cloister-spearman', '종루의 창지기', new THREE.Vector3(28.2, 3.56, -20.0), audio, 1),
+      new AshenHound(scene, physics, 'cloister-hound', '회랑의 잿불 사냥개', new THREE.Vector3(29.0, 3.26, -47.0), audio, -1),
+      new BellKeeper(scene, physics, 'bell-warden', '정예 · 검은 종의 수호자', new THREE.Vector3(23.5, 3.56, -53.8), audio, true),
+      new AshenSentinel(scene, physics, 'oathbound-captain', '정예 · 서약대장', new THREE.Vector3(0, 1.62, -72.8), audio, 2),
     ];
   }
 
@@ -78,19 +56,20 @@ export class CombatDirector {
     this.lockedEnemy = this.findBestTarget(cameraForward, this.playerPosition);
   }
 
-  handleExecution(input: InputController, player: PlayerController): void {
-    if (!input.consumeAction('execute') || this.executingEnemy || player.isDead()) return;
+  tryExecution(player: PlayerController): boolean {
+    if (this.executingEnemy || player.isDead()) return false;
     player.getWorldPosition(this.playerPosition);
     const candidate = this.lockedEnemy;
-    if (!candidate || !candidate.isExecutable(this.playerPosition)) return;
+    if (!candidate || !candidate.isExecutable(this.playerPosition)) return false;
     const snapshot = candidate.getLockSnapshot();
-    if (!player.beginExecution(snapshot.position)) return;
+    if (!player.beginExecution(snapshot.position)) return false;
     candidate.beginExecution();
     this.executingEnemy = candidate;
     this.audio.postureBreak();
     this.effects.spawnPostureBreak(snapshot.position);
     this.cameraImpulse = Math.max(this.cameraImpulse, 0.34);
     this.hitStop = Math.max(this.hitStop, 0.055);
+    return true;
   }
 
   fixedUpdate(delta: number, player: PlayerController): void {
@@ -102,6 +81,7 @@ export class CombatDirector {
       return;
     }
 
+    this.coordinateAttackSlots();
     for (const enemy of this.enemies) enemy.fixedUpdate(delta, this.playerPosition);
 
     const playerPulse = player.consumeAttackPulse();
@@ -115,7 +95,9 @@ export class CombatDirector {
 
     if (player.consumeExecutionImpact() && this.executingEnemy) {
       const snapshot = this.executingEnemy.getLockSnapshot();
-      this.executingEnemy.finishExecution();
+      const executed = this.executingEnemy;
+      executed.finishExecution();
+      this.awardEnemy(executed);
       this.effects.spawnExecution(snapshot.position);
       this.audio.execution();
       this.cameraImpulse = Math.max(this.cameraImpulse, 0.92);
@@ -135,7 +117,35 @@ export class CombatDirector {
     this.executingEnemy = null;
     this.cameraImpulse = 0;
     this.hitStop = 0;
+    this.pendingAshReward = 0;
+    this.rewardedEnemies.clear();
     for (const enemy of this.enemies) enemy.reset();
+  }
+
+  resetAtRest(): void {
+    this.lockedEnemy = null;
+    this.executingEnemy = null;
+    this.cameraImpulse = 0;
+    this.hitStop = 0;
+    this.pendingAshReward = 0;
+    this.rewardedEnemies.clear();
+    for (const enemy of this.enemies) enemy.reset();
+  }
+
+  consumeAshReward(): number {
+    const reward = this.pendingAshReward;
+    this.pendingAshReward = 0;
+    return reward;
+  }
+
+  hasThreatNear(position: THREE.Vector3, radius: number): boolean {
+    const radiusSquared = radius * radius;
+    for (const enemy of this.enemies) {
+      if (!enemy.isActive()) continue;
+      enemy.getPosition(this.enemyPosition);
+      if (this.enemyPosition.distanceToSquared(position) <= radiusSquared) return true;
+    }
+    return false;
   }
 
   updateVisual(delta: number): void {
@@ -166,6 +176,33 @@ export class CombatDirector {
     const impulse = this.cameraImpulse;
     this.cameraImpulse = 0;
     return impulse;
+  }
+
+  private coordinateAttackSlots(): void {
+    const ranked = this.enemies
+      .filter((enemy) => enemy.isActive())
+      .map((enemy) => {
+        enemy.getPosition(this.enemyPosition);
+        return { enemy, distanceSquared: this.enemyPosition.distanceToSquared(this.playerPosition) };
+      })
+      .sort((a, b) => a.distanceSquared - b.distanceSquared);
+
+    let availableSlots = 2;
+    for (const entry of ranked) {
+      if (entry.enemy.isCommittedAttack()) {
+        entry.enemy.setAttackAllowed(true);
+        availableSlots = Math.max(0, availableSlots - 1);
+      } else {
+        entry.enemy.setAttackAllowed(false);
+      }
+    }
+    for (const entry of ranked) {
+      if (entry.enemy.isCommittedAttack()) continue;
+      const closeEnough = entry.distanceSquared <= GAME_CONFIG.world.threatRadius * GAME_CONFIG.world.threatRadius;
+      const allowed = closeEnough && availableSlots > 0;
+      entry.enemy.setAttackAllowed(allowed);
+      if (allowed) availableSlots -= 1;
+    }
   }
 
   private findBestTarget(cameraForward: THREE.Vector3, playerPosition: THREE.Vector3): CombatEnemy | null {
@@ -215,6 +252,7 @@ export class CombatDirector {
         this.hitStop,
         pulse.weight === 'heavy' ? 0.085 : pulse.weight === 'medium' ? 0.055 : 0.038,
       );
+      if (result === 'killed') this.awardEnemy(enemy);
       if (result === 'broken') {
         this.effects.spawnPostureBreak(hitPosition);
         this.audio.postureBreak();
@@ -225,6 +263,12 @@ export class CombatDirector {
       hitCount += 1;
     }
     if (hitCount === 0) this.cameraImpulse = Math.max(this.cameraImpulse, 0.045);
+  }
+
+  private awardEnemy(enemy: CombatEnemy): void {
+    if (this.rewardedEnemies.has(enemy.id)) return;
+    this.rewardedEnemies.add(enemy.id);
+    this.pendingAshReward += enemy.ashReward;
   }
 
   private resolveEnemyAttack(

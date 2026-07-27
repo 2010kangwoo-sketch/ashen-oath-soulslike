@@ -1,6 +1,7 @@
 import type { Camera } from 'three';
 import type { LockTargetSnapshot } from '../combat/CombatTypes';
 import type { PlayerMotionState } from '../player/PlayerController';
+import type { ProgressionSnapshot } from '../progression/ProgressionDirector';
 
 export class GameHud {
   private readonly root: HTMLElement;
@@ -22,6 +23,15 @@ export class GameHud {
   private readonly chargeFill: HTMLElement;
   private readonly lockReticle: HTMLElement;
   private readonly deathPanel: HTMLElement;
+  private readonly deathProgressFill: HTMLElement;
+  private readonly flaskCount: HTMLElement;
+  private readonly ashCount: HTMLElement;
+  private readonly interactionPrompt: HTMLElement;
+  private readonly noticePanel: HTMLElement;
+  private readonly areaTitle: HTMLElement;
+  private readonly areaTitleName: HTMLElement;
+  private readonly objectiveText: HTMLElement;
+  private currentArea = '';
   private debugVisible = false;
 
   constructor() {
@@ -44,6 +54,14 @@ export class GameHud {
     this.chargeFill = this.requireElement('charge-fill');
     this.lockReticle = this.requireElement('lock-reticle');
     this.deathPanel = this.requireElement('death-panel');
+    this.deathProgressFill = this.requireElement('death-progress-fill');
+    this.flaskCount = this.requireElement('flask-count');
+    this.ashCount = this.requireElement('ash-count');
+    this.interactionPrompt = this.requireElement('interaction-prompt');
+    this.noticePanel = this.requireElement('notice-panel');
+    this.areaTitle = this.requireElement('area-title');
+    this.areaTitleName = this.requireElement('area-title-name');
+    this.objectiveText = this.requireElement('objective-text');
   }
 
   reveal(): void {
@@ -68,6 +86,7 @@ export class GameHud {
       heavyCharge: '강공격 모으기',
       heavy: '강공격',
       execute: '처형',
+      heal: '회복',
       guard: '방어',
       parry: '패링',
       stagger: '경직',
@@ -112,6 +131,24 @@ export class GameHud {
 
   setDeathState(dead: boolean): void {
     this.deathPanel.classList.toggle('is-hidden', !dead);
+  }
+
+  setProgression(snapshot: ProgressionSnapshot): void {
+    this.ashCount.textContent = snapshot.ash.toLocaleString('ko-KR');
+    this.flaskCount.textContent = `${snapshot.flaskCharges}/${snapshot.flaskCapacity}`;
+    this.interactionPrompt.classList.toggle('is-hidden', !snapshot.interaction);
+    if (snapshot.interaction) this.interactionPrompt.textContent = snapshot.interaction;
+    this.noticePanel.classList.toggle('is-hidden', !snapshot.notice);
+    if (snapshot.notice) this.noticePanel.textContent = snapshot.notice;
+    this.objectiveText.textContent = snapshot.objective;
+    this.deathProgressFill.style.transform = `scaleX(${clamp01(snapshot.deathProgress)})`;
+    if (snapshot.areaName !== this.currentArea) {
+      this.currentArea = snapshot.areaName;
+      this.areaTitleName.textContent = snapshot.areaName;
+      this.areaTitle.style.animation = 'none';
+      void this.areaTitle.offsetWidth;
+      this.areaTitle.style.animation = '';
+    }
   }
 
   setPointerLocked(locked: boolean): void {

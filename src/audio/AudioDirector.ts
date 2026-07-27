@@ -96,6 +96,48 @@ export class AudioDirector {
     this.playOscillator(now, 'square', 118, 26, 0.38, 0.12);
   }
 
+  heal(): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playOscillator(now, 'sine', 420, 680, 0.46, 0.05);
+    this.playOscillator(now + 0.08, 'triangle', 610, 930, 0.4, 0.026);
+    this.playNoiseBurst(now, 0.32, 760, 4200, 0.026);
+  }
+
+  checkpoint(): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playOscillator(now, 'sine', 146, 142, 1.6, 0.055);
+    this.playOscillator(now + 0.06, 'sine', 292, 284, 1.25, 0.032);
+    this.playOscillator(now + 0.14, 'triangle', 438, 426, 0.9, 0.018);
+  }
+
+  collectAsh(): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playOscillator(now, 'sine', 280, 720, 0.34, 0.038);
+    this.playOscillator(now + 0.05, 'triangle', 480, 960, 0.28, 0.022);
+  }
+
+  shortcut(): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playNoiseBurst(now, 0.68, 42, 920, 0.09);
+    this.playOscillator(now, 'sawtooth', 74, 34, 0.72, 0.045);
+  }
+
+  death(): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playOscillator(now, 'sawtooth', 126, 31, 1.35, 0.06);
+    this.playNoiseBurst(now, 0.72, 35, 1100, 0.055);
+  }
+
   enemyTell(weight: SwingWeight): void {
     const ctx = this.readyContext();
     if (!ctx) return;

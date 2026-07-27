@@ -41,6 +41,9 @@ export class CathedralApproach {
     this.createBrokenColonnades();
     this.createCathedralFacade();
     this.createSideRoutes();
+    this.createBellCloister();
+    this.createAshenAltar();
+    this.createReturnPassages();
     this.createRubbleAndWear();
     this.createDynamicDebris();
     this.createBannersAndChains();
@@ -89,7 +92,7 @@ export class CathedralApproach {
   }
 
   private createGroundComposition(): void {
-    this.addStaticBox('buried-ground', [58, 1.8, 86], [0, -0.9, -6], this.basalt, undefined, true);
+    this.addStaticBox('buried-ground', [72, 1.8, 122], [0, -0.9, -23], this.basalt, undefined, true);
 
     const slabSizes: ReadonlyArray<readonly [number, number, number, number]> = [
       [-11, 20, 18, 13], [9, 21, 20, 14], [-12, 7, 16, 13], [9, 7, 20, 12],
@@ -251,6 +254,120 @@ export class CathedralApproach {
     this.addStaticBox('east-gallery-wall', [1.2, 5.5, 15], [28.6, 5.0, -8], this.basalt, undefined, true);
   }
 
+  private createBellCloister(): void {
+    // The cloister bends around the cathedral instead of extending the original
+    // processional path in a straight line. Its higher floor and narrow outer
+    // rail make enemy spacing and camera behaviour visibly different.
+    this.addStaticBox('cloister-entry', [12, 1.0, 16], [21.8, 2.8, -20], this.wornStone, undefined, true);
+    this.addStaticBox('cloister-spine', [13.5, 1.0, 38], [23.0, 2.8, -42], this.paleStone, undefined, true);
+    this.addStaticBox('cloister-outer-rail', [1.1, 3.4, 43], [29.4, 4.5, -39.5], this.basalt, undefined, true);
+    this.addStaticBox('cloister-inner-rail-north', [1.0, 3.2, 15], [16.4, 4.4, -45], this.basalt, undefined, true);
+    this.addStaticBox('cloister-inner-rail-south', [1.0, 3.2, 10], [16.4, 4.4, -25], this.basalt, undefined, true);
+
+    for (let index = 0; index < 5; index += 1) {
+      const z = -27 - index * 7.1;
+      this.createColumn(`cloister-column-${index}`, new THREE.Vector3(18.1, 3.3, z), 5.4 + (index % 2) * 0.5, 0.54, index === 3);
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(2.55, 0.3, 8, 36, Math.PI), this.wornStone);
+      arch.position.set(18.1, 7.5, z);
+      arch.rotation.y = Math.PI / 2;
+      arch.castShadow = true;
+      this.group.add(arch);
+    }
+
+    for (let index = 0; index < 3; index += 1) {
+      const frame = new THREE.Group();
+      frame.position.set(24.4, 7.4, -31 - index * 11.2);
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(4.7, 0.34, 0.38), this.blackIron);
+      beam.castShadow = true;
+      frame.add(beam);
+      for (const x of [-2.05, 2.05]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5.0, 0.38), this.blackIron);
+        post.position.set(x, -2.4, 0);
+        post.castShadow = true;
+        frame.add(post);
+      }
+      const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 1.18, 1.45, 14, 1, true), this.bronze);
+      bell.position.y = -1.15;
+      bell.castShadow = true;
+      frame.add(bell);
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(1.18, 0.1, 8, 28), this.bronze);
+      rim.rotation.x = Math.PI / 2;
+      rim.position.y = -1.85;
+      frame.add(rim);
+      this.group.add(frame);
+    }
+
+    this.atmosphere.addTorch(new THREE.Vector3(20.2, 5.1, -34), 35);
+    this.atmosphere.addTorch(new THREE.Vector3(26.4, 5.1, -46), 37);
+  }
+
+  private createAshenAltar(): void {
+    this.addStaticBox('altar-bridge', [38, 1.0, 8.5], [7.5, 1.1, -58.5], this.wornStone, undefined, true);
+    this.addStaticBox('altar-terrace', [31, 1.2, 25], [0, 0.6, -69.5], this.paleStone, undefined, true);
+    this.addStaticBox('altar-west-wall', [1.2, 5.6, 26], [-15.3, 3.4, -69.5], this.basalt, undefined, true);
+    this.addStaticBox('altar-east-wall', [1.2, 5.6, 26], [15.3, 3.4, -69.5], this.basalt, undefined, true);
+    this.addStaticBox('altar-north-dais', [18, 2.2, 7], [0, 1.1, -80], this.basalt, undefined, true);
+
+    const altarRing = new THREE.Mesh(new THREE.RingGeometry(5.2, 7.4, 72, 2), this.wornStone);
+    altarRing.rotation.x = -Math.PI / 2;
+    altarRing.position.set(0, 1.22, -70.5);
+    altarRing.receiveShadow = true;
+    this.group.add(altarRing);
+    const innerSigil = new THREE.Mesh(new THREE.TorusKnotGeometry(2.0, 0.08, 96, 8, 3, 5), this.bronze);
+    innerSigil.scale.y = 0.04;
+    innerSigil.position.set(0, 1.28, -70.5);
+    innerSigil.rotation.x = Math.PI / 2;
+    this.group.add(innerSigil);
+
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (index / 8) * Math.PI * 2;
+      const radius = index % 2 === 0 ? 10.6 : 12.2;
+      const x = Math.sin(angle) * radius;
+      const z = -70.5 + Math.cos(angle) * radius;
+      const pillarHeight = 5.8 + (index % 3) * 0.8;
+      this.createColumn(`altar-pillar-${index}`, new THREE.Vector3(x, 1.2, z), pillarHeight, 0.62, index === 2 || index === 6);
+    }
+
+    const suspended = new THREE.Group();
+    suspended.position.set(0, 10.5, -73);
+    for (let index = 0; index < 4; index += 1) {
+      const fragment = new THREE.Mesh(new THREE.DodecahedronGeometry(0.65 + index * 0.12, 0), index % 2 ? this.paleStone : this.basalt);
+      fragment.position.set((index - 1.5) * 1.5, Math.sin(index * 1.9) * 0.8, Math.cos(index * 1.2) * 1.2);
+      fragment.rotation.set(index * 0.4, index * 0.7, index * 0.2);
+      fragment.castShadow = true;
+      suspended.add(fragment);
+    }
+    this.group.add(suspended);
+
+    this.atmosphere.addTorch(new THREE.Vector3(-8.5, 3.2, -67), 44);
+    this.atmosphere.addTorch(new THREE.Vector3(8.5, 3.2, -67), 44);
+    this.atmosphere.addTorch(new THREE.Vector3(0, 4.2, -79), 52);
+  }
+
+  private createReturnPassages(): void {
+    // Three shortcuts each cut a different piece of the return trip rather than
+    // opening cosmetic doors that lead nowhere.
+    this.addStaticBox('west-return-upper', [13, 0.9, 18], [-10.5, 1.45, -51.5], this.wornStone, undefined, true);
+    this.addStaticBox('west-return-lower', [11, 0.8, 22], [-19.8, 2.75, -39], this.paleStone, undefined, true);
+    this.addStaticBox('west-return-rail', [1.0, 3.1, 42], [-25.1, 4.2, -41], this.basalt, undefined, true);
+    this.addStaticBox(
+      'west-return-ramp',
+      [15.5, 0.7, 5.0],
+      [-15.5, 2.15, -28],
+      this.wornStone,
+      new THREE.Euler(0, 0, THREE.MathUtils.degToRad(-7.5)),
+      true,
+    );
+
+    for (let index = 0; index < 7; index += 1) {
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(4.2 + (index % 2) * 0.6, 0.22, 2.6), index % 2 ? this.wornStone : this.paleStone);
+      slab.position.set(-7.5 + index * 2.35, 1.72, -57.2 + Math.sin(index * 0.8) * 0.45);
+      slab.rotation.y = (index - 3) * 0.025;
+      slab.receiveShadow = true;
+      this.group.add(slab);
+    }
+  }
+
   private createRubbleAndWear(): void {
     let state = 3471;
     const random = (): number => {
@@ -373,15 +490,15 @@ export class CathedralApproach {
     radius: number,
     broken: boolean,
   ): void {
-    this.addStaticCylinder(name, radius, height, [position.x, height / 2, position.z], this.wornStone, true);
+    this.addStaticCylinder(name, radius, height, [position.x, position.y + height / 2, position.z], this.wornStone, true);
     const base = new THREE.Mesh(new THREE.CylinderGeometry(radius * 1.42, radius * 1.58, 0.42, 10), this.paleStone);
-    base.position.set(position.x, 0.21, position.z);
+    base.position.set(position.x, position.y + 0.21, position.z);
     base.castShadow = true;
     base.receiveShadow = true;
     this.group.add(base);
 
     const capital = new THREE.Mesh(new THREE.BoxGeometry(radius * 2.4, 0.46, radius * 2.4), this.paleStone);
-    capital.position.set(position.x, height + 0.05, position.z);
+    capital.position.set(position.x, position.y + height + 0.05, position.z);
     capital.rotation.y = position.z * 0.013;
     capital.castShadow = true;
     this.group.add(capital);

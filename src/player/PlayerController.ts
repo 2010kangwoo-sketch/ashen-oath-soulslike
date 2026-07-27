@@ -9,7 +9,7 @@ import { AshenKnightVisual, type KnightVisualState } from './AshenKnightVisual';
 
 export type PlayerMotionState = KnightVisualState;
 export type DamageResult = 'hit' | 'evaded' | 'guarded' | 'parried';
-type PlayerAction = 'none' | 'dodge' | PlayerAttackId | 'heavyCharge' | 'execute' | 'guard' | 'parry' | 'stagger' | 'dead';
+type PlayerAction = 'none' | 'dodge' | PlayerAttackId | 'heavyCharge' | 'execute' | 'heal' | 'guard' | 'parry' | 'stagger' | 'dead';
 
 export class PlayerController {
   readonly visual: THREE.Group;
@@ -51,6 +51,8 @@ export class PlayerController {
   private attackPulseEmitted = false;
   private pendingAttackPulse: AttackPulse | null = null;
   private invulnerable = false;
+  private flaskCharges: number = GAME_CONFIG.player.flaskCapacity;
+  private healApplied = false;
 
   constructor(scene: THREE.Scene, physics: PhysicsWorld, private readonly audio: AudioDirector) {
     this.visual = this.knight.root;
@@ -165,6 +167,8 @@ export class PlayerController {
     this.chargeRatio = 0;
     this.executionTarget = null;
     this.executionImpactPending = false;
+    this.pendingAttackPulse = null;
+    this.attackPulseEmitted = false;
     return 'hit';
   }
 
@@ -202,7 +206,65 @@ export class PlayerController {
     this.executionImpactEmitted = false;
     this.footstepDistance = 0;
     this.pendingFootsteps = 0;
+    this.flaskCharges = GAME_CONFIG.player.flaskCapacity;
+    this.healApplied = false;
     this.syncVisual();
+  }
+
+  respawnAt(position: THREE.Vector3): void {
+    this.body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
+    this.body.setNextKinematicTranslation({ x: position.x, y: position.y, z: position.z });
+    this.horizontalVelocity.set(0, 0, 0);
+    this.actualVelocity.set(0, 0, 0);
+    this.knockbackVelocity.set(0, 0, 0);
+    this.verticalVelocity = 0;
+    this.actualSpeed = 0;
+    this.grounded = false;
+    this.action = 'none';
+    this.actionTimer = 0;
+    this.actionProgress = 0;
+    this.health = GAME_CONFIG.player.maxHealth;
+    this.stamina = GAME_CONFIG.player.maxStamina;
+    this.staminaRegenDelay = 0;
+    this.state = 'airborne';
+    this.sprintBlend = 0;
+    this.invulnerable = false;
+    this.pendingAttackPulse = null;
+    this.chargeRatio = 0;
+    this.attackDamageScale = 1;
+    this.attackPoiseScale = 1;
+    this.executionTarget = null;
+    this.executionImpactPending = false;
+    this.executionImpactEmitted = false;
+    this.queuedLightAttack = false;
+    this.healApplied = false;
+    this.footstepDistance = 0;
+    this.pendingFootsteps = 0;
+    this.syncVisual();
+  }
+
+  restAtCheckpoint(): void {
+    this.health = GAME_CONFIG.player.maxHealth;
+    this.stamina = GAME_CONFIG.player.maxStamina;
+    this.flaskCharges = GAME_CONFIG.player.flaskCapacity;
+    this.staminaRegenDelay = 0;
+    if (this.action !== 'dead') this.finishAction();
+  }
+
+  refillFlasks(): void {
+    this.flaskCharges = GAME_CONFIG.player.flaskCapacity;
+  }
+
+  getFlaskCharges(): number {
+    return this.flaskCharges;
+  }
+
+  getHealth(): number {
+    return this.health;
+  }
+
+  getMaxHealth(): number {
+    return GAME_CONFIG.player.maxHealth;
   }
 
   getCameraTarget(target: THREE.Vector3): THREE.Vector3 {
@@ -297,8 +359,14 @@ export class PlayerController {
     const lightPressed = input.consumeAction('lightAttack');
     const heavyPressed = input.consumeAction('heavyAttack');
     const parryPressed = input.consumeAction('parry');
+    const healPressed = input.consumeAction('heal');
 
     if (this.action === 'dead' || this.action === 'stagger' || this.action === 'execute') return;
+
+    if (this.action === 'heal') {
+      if (dodgePressed && this.canDodge()) this.startDodge(lockTarget);
+      return;
+    }
 
     if (this.action === 'heavyCharge') {
       this.chargeRatio = THREE.MathUtils.clamp(
@@ -328,6 +396,11 @@ export class PlayerController {
       return;
     }
 
+    if (healPressed && this.canHeal()) {
+      this.startHeal();
+      return;
+    }
+
     if (this.action === 'guard') {
       if (lightPressed) this.startAttack('light1', lockTarget);
       else if (heavyPressed) this.startHeavyCharge(lockTarget);
@@ -346,6 +419,23 @@ export class PlayerController {
     if (lightPressed) this.startAttack('light1', lockTarget);
     else if (heavyPressed) this.startHeavyCharge(lockTarget);
     else if (input.isGuarding() && this.grounded) this.startGuard();
+  }
+
+  private canHeal(): boolean {
+    return this.grounded
+      && this.flaskCharges > 0
+      && this.health > 0
+      && this.health < GAME_CONFIG.player.maxHealth
+      && (this.action === 'none' || this.action === 'guard');
+  }
+
+  private startHeal(): void {
+    this.action = 'heal';
+    this.actionTimer = 0;
+    this.actionProgress = 0;
+    this.healApplied = false;
+    this.horizontalVelocity.multiplyScalar(0.12);
+    this.queuedLightAttack = false;
   }
 
   private canDodge(): boolean {
@@ -490,6 +580,14 @@ export class PlayerController {
       return this.horizontalVelocity;
     }
 
+    if (this.action === 'heal') {
+      const target = this.scratchDirection.copy(this.desiredDirection).multiplyScalar(
+        inputMagnitude > 0.04 ? 0.72 * inputMagnitude : 0,
+      );
+      this.horizontalVelocity.lerp(target, 1 - Math.exp(-18 * delta));
+      return this.horizontalVelocity;
+    }
+
     if (this.action === 'execute') {
       if (this.executionTarget) {
         const position = this.getWorldPosition(new THREE.Vector3());
@@ -600,7 +698,7 @@ export class PlayerController {
     const attackProfile = attackAction ? GAME_CONFIG.combat.attacks[currentAction] : null;
     const trackingOpen = attackProfile !== null && this.actionTimer < attackProfile.activeStart * 0.82;
     const canTrack = this.action === 'none' || this.action === 'guard' || this.action === 'parry'
-      || this.action === 'heavyCharge' || this.action === 'execute' || trackingOpen;
+      || this.action === 'heavyCharge' || this.action === 'heal' || this.action === 'execute' || trackingOpen;
     if (canTrack) {
       let targetYaw: number | null = null;
       let turnSpeed: number = GAME_CONFIG.player.turnSpeedWalk;
@@ -612,7 +710,7 @@ export class PlayerController {
         turnSpeed = attackAction
           ? THREE.MathUtils.degToRad(GAME_CONFIG.combat.attackTrackingDegrees) / 0.24
           : GAME_CONFIG.player.lockTurnSpeed;
-      } else if (hasInput && (this.action === 'none' || this.action === 'guard' || this.action === 'heavyCharge')) {
+      } else if (hasInput && (this.action === 'none' || this.action === 'guard' || this.action === 'heavyCharge' || this.action === 'heal')) {
         targetYaw = Math.atan2(-this.desiredDirection.x, -this.desiredDirection.z);
         turnSpeed = this.actualSpeed > GAME_CONFIG.player.walkSpeed * 1.1
           ? GAME_CONFIG.player.turnSpeedRun
@@ -632,6 +730,19 @@ export class PlayerController {
     if (this.action === 'heavyCharge') {
       this.chargeRatio = THREE.MathUtils.clamp(this.actionTimer / GAME_CONFIG.player.heavyChargeMax, 0, 1);
       this.actionProgress = this.chargeRatio;
+      return;
+    }
+    if (this.action === 'heal') {
+      this.actionProgress = THREE.MathUtils.clamp(this.actionTimer / GAME_CONFIG.player.healDuration, 0, 1);
+      if (!this.healApplied
+        && previousTimer < GAME_CONFIG.player.healImpactTime
+        && this.actionTimer >= GAME_CONFIG.player.healImpactTime) {
+        this.healApplied = true;
+        this.flaskCharges = Math.max(0, this.flaskCharges - 1);
+        this.health = Math.min(GAME_CONFIG.player.maxHealth, this.health + GAME_CONFIG.player.healAmount);
+        this.audio.heal();
+      }
+      if (this.actionTimer >= GAME_CONFIG.player.healDuration) this.finishAction();
       return;
     }
     if (this.action === 'execute') {
@@ -722,6 +833,7 @@ export class PlayerController {
     this.attackDamageScale = 1;
     this.attackPoiseScale = 1;
     this.executionTarget = null;
+    this.healApplied = false;
   }
 
   private updateMotionState(runRequested: boolean): void {
@@ -744,7 +856,7 @@ export class PlayerController {
     this.staminaRegenDelay = Math.max(0, this.staminaRegenDelay - delta);
     if (this.staminaRegenDelay <= 0 && this.action !== 'dodge' && this.action !== 'guard'
       && this.action !== 'parry' && this.action !== 'heavyCharge'
-      && this.action !== 'execute' && this.action !== 'dead') {
+      && this.action !== 'execute' && this.action !== 'heal' && this.action !== 'dead') {
       this.stamina = Math.min(
         GAME_CONFIG.player.maxStamina,
         this.stamina + GAME_CONFIG.player.staminaRegenPerSecond * delta,
@@ -761,7 +873,15 @@ export class PlayerController {
     const position = this.body.translation();
     this.visual.position.set(position.x, position.y, position.z);
     this.visual.rotation.y = this.facingYaw;
-    if (position.y < -20) this.reset();
+    if (position.y < -20 && this.action !== 'dead') {
+      this.health = 0;
+      this.action = 'dead';
+      this.actionTimer = 0;
+      this.actionProgress = 0;
+      this.horizontalVelocity.set(0, 0, 0);
+      this.knockbackVelocity.set(0, 0, 0);
+      this.pendingAttackPulse = null;
+    }
   }
 }
 
