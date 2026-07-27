@@ -19,14 +19,15 @@ export class PhysicsWorld {
   }
 
   step(delta: number, beforeStep?: FixedStepCallback): number {
-    this.accumulator += Math.min(delta, 0.1);
+    this.accumulator += Math.min(delta, GAME_CONFIG.physics.fixedStep * GAME_CONFIG.physics.maxSubSteps);
     let steps = 0;
-    while (this.accumulator >= GAME_CONFIG.physics.fixedStep) {
+    while (this.accumulator >= GAME_CONFIG.physics.fixedStep && steps < GAME_CONFIG.physics.maxSubSteps) {
       beforeStep?.(GAME_CONFIG.physics.fixedStep);
       this.world.step();
       this.accumulator -= GAME_CONFIG.physics.fixedStep;
       steps += 1;
     }
+    if (steps === GAME_CONFIG.physics.maxSubSteps) this.accumulator = 0;
     return steps;
   }
 }

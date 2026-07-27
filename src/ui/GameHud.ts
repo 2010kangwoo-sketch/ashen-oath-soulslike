@@ -1,36 +1,30 @@
 import type { PlayerMotionState } from '../player/PlayerController';
 
-export class DiagnosticsHud {
+export class GameHud {
   private readonly root: HTMLElement;
   private readonly help: HTMLElement;
-  private readonly renderStatus: HTMLElement;
-  private readonly physicsStatus: HTMLElement;
+  private readonly debug: HTMLElement;
   private readonly fpsStatus: HTMLElement;
   private readonly movementStatus: HTMLElement;
   private readonly speedStatus: HTMLElement;
   private readonly groundedStatus: HTMLElement;
+  private readonly pointerHint: HTMLElement;
+  private debugVisible = false;
 
   constructor() {
     this.root = this.requireElement('hud');
-    this.help = this.requireQuery('.help-panel');
-    this.renderStatus = this.requireElement('render-status');
-    this.physicsStatus = this.requireElement('physics-status');
+    this.help = this.requireElement('control-help');
+    this.debug = this.requireElement('debug-panel');
     this.fpsStatus = this.requireElement('fps-status');
     this.movementStatus = this.requireElement('movement-status');
     this.speedStatus = this.requireElement('speed-status');
     this.groundedStatus = this.requireElement('grounded-status');
+    this.pointerHint = this.requireElement('pointer-hint');
   }
 
   reveal(): void {
     this.root.classList.remove('is-hidden');
-  }
-
-  setRenderReady(): void {
-    this.renderStatus.textContent = '정상';
-  }
-
-  setPhysicsReady(): void {
-    this.physicsStatus.textContent = '정상';
+    window.setTimeout(() => this.root.classList.add('hud-settled'), 4200);
   }
 
   setFps(fps: number): void {
@@ -38,24 +32,33 @@ export class DiagnosticsHud {
   }
 
   setPlayerState(state: PlayerMotionState, speed: number, grounded: boolean): void {
-    this.movementStatus.textContent = state;
+    const labels: Record<PlayerMotionState, string> = {
+      idle: '대기',
+      walk: '걷기',
+      run: '질주',
+      airborne: '낙하',
+    };
+    this.movementStatus.textContent = labels[state];
     this.speedStatus.textContent = `${speed.toFixed(1)} m/s`;
     this.groundedStatus.textContent = grounded ? '접지' : '공중';
+  }
+
+  setPointerLocked(locked: boolean): void {
+    this.pointerHint.classList.toggle('is-hidden', locked);
   }
 
   toggleHelp(): void {
     this.help.classList.toggle('is-hidden');
   }
 
-  private requireElement(id: string): HTMLElement {
-    const element = document.getElementById(id);
-    if (!element) throw new Error(`필수 UI 요소를 찾지 못했습니다: #${id}`);
-    return element;
+  toggleDebug(): void {
+    this.debugVisible = !this.debugVisible;
+    this.debug.classList.toggle('is-hidden', !this.debugVisible);
   }
 
-  private requireQuery(selector: string): HTMLElement {
-    const element = document.querySelector<HTMLElement>(selector);
-    if (!element) throw new Error(`필수 UI 요소를 찾지 못했습니다: ${selector}`);
+  private requireElement(id: string): HTMLElement {
+    const element = document.getElementById(id);
+    if (!element) throw new Error(`Required UI element is missing: #${id}`);
     return element;
   }
 }

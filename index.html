@@ -3,50 +3,63 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b0d10" />
+    <meta name="theme-color" content="#080a0d" />
     <meta
       name="description"
-      content="Ashen Oath: 브라우저 기반 3D 소울라이크 이동 검증 빌드"
+      content="Ashen Oath: 브라우저에서 실행되는 완결형 3D 소울라이크 게임"
     />
-    <title>Ashen Oath — Pass 1</title>
+    <title>Ashen Oath</title>
   </head>
   <body>
     <div id="app">
-      <canvas id="game-canvas" aria-label="Ashen Oath 3D 이동 검증 장면"></canvas>
+      <canvas id="game-canvas" aria-label="Ashen Oath 게임 화면"></canvas>
+
       <div id="loading-screen" role="status" aria-live="polite">
+        <div class="loading-mark" aria-hidden="true"><span></span></div>
         <p class="loading-kicker">ASHEN OATH</p>
-        <h1>잿빛 성역을 깨우는 중</h1>
+        <h1>잿빛 서약</h1>
+        <p class="loading-copy">대성당의 종이 다시 울리기 전, 서약을 끝내라.</p>
         <div class="loading-track"><span id="loading-progress"></span></div>
-        <p id="loading-label">렌더러 준비</p>
+        <p id="loading-label">빛과 그림자를 준비하는 중</p>
       </div>
-      <section id="hud" class="hud is-hidden" aria-label="개발 빌드 상태">
-        <div class="brand-panel">
-          <p class="eyebrow">MOVEMENT BUILD · PASS 1</p>
-          <h1>Ashen Oath</h1>
-          <p>계단·경사·충돌·추적 카메라 검증 성역</p>
+
+      <section id="hud" class="hud is-hidden" aria-label="게임 정보">
+        <div class="player-vitals" aria-label="플레이어 상태">
+          <div class="vital-row"><span class="vital-icon health-icon"></span><div class="vital-track health"><span></span></div></div>
+          <div class="vital-row"><span class="vital-icon stamina-icon"></span><div class="vital-track stamina"><span></span></div></div>
         </div>
-        <div class="status-panel" aria-live="polite">
-          <div><span>렌더링</span><strong id="render-status">대기</strong></div>
-          <div><span>물리</span><strong id="physics-status">대기</strong></div>
-          <div><span>프레임</span><strong id="fps-status">--</strong></div>
-          <div><span>동작</span><strong id="movement-status">공중</strong></div>
-          <div><span>속도</span><strong id="speed-status">0.0 m/s</strong></div>
-          <div><span>바닥</span><strong id="grounded-status">공중</strong></div>
+
+        <div class="area-title" aria-live="polite">
+          <p>무너진 왕도의 변두리</p>
+          <h1>대성당 진입로</h1>
+          <span></span>
         </div>
-        <div class="route-panel" aria-hidden="true">
-          <span>계단 시험</span>
-          <span>중앙 성소</span>
-          <span>경사 시험</span>
+
+        <div class="objective-panel">
+          <p class="eyebrow">현재 서약</p>
+          <p>봉인된 대성당의 문에 도달하라</p>
         </div>
-        <div class="help-panel">
-          <p><kbd>W A S D</kbd> 이동</p>
-          <p><kbd>Shift</kbd> 달리기</p>
-          <p><kbd>마우스 드래그</kbd> 시점 회전</p>
-          <p><kbd>휠</kbd> 카메라 거리</p>
-          <p><kbd>R</kbd> 시작 위치로 복귀</p>
-          <p><kbd>H</kbd> 조작 안내 숨기기</p>
+
+        <div id="pointer-hint" class="pointer-hint">
+          <span>화면을 클릭해 시점을 고정</span>
+        </div>
+
+        <div id="control-help" class="control-help">
+          <p><kbd>W A S D</kbd><span>이동</span></p>
+          <p><kbd>Shift</kbd><span>질주</span></p>
+          <p><kbd>Mouse</kbd><span>시점</span></p>
+          <p><kbd>Esc</kbd><span>시점 해제</span></p>
+          <p><kbd>H</kbd><span>안내 숨김</span></p>
+        </div>
+
+        <div id="debug-panel" class="debug-panel is-hidden" aria-live="polite">
+          <p><span>프레임</span><strong id="fps-status">--</strong></p>
+          <p><span>동작</span><strong id="movement-status">대기</strong></p>
+          <p><span>속도</span><strong id="speed-status">0.0 m/s</strong></p>
+          <p><span>접지</span><strong id="grounded-status">공중</strong></p>
         </div>
       </section>
+
       <div id="fatal-error" class="fatal-error is-hidden" role="alert"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

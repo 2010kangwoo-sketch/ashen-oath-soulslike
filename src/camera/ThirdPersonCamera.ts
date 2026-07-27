@@ -1,70 +1,103 @@
 import * as THREE from 'three';
 import { GAME_CONFIG } from '../config/GameConfig';
+import type { LookAxes } from '../input/InputController';
 
 export class ThirdPersonCamera {
-  private readonly camera: THREE.PerspectiveCamera;
-  private readonly canvas: HTMLCanvasElement;
-  private readonly blockers: THREE.Object3D[];
   private readonly raycaster = new THREE.Raycaster();
   private readonly smoothedTarget = new THREE.Vector3();
+  private readonly desiredTarget = new THREE.Vector3();
   private readonly desiredPosition = new THREE.Vector3();
-  private readonly cameraDirection = new THREE.Vector3();
+  private readonly shoulder = new THREE.Vector3();
+  private readonly cameraVector = new THREE.Vector3();
+  private readonly velocityLookAhead = new THREE.Vector3();
   private readonly planarForward = new THREE.Vector3(0, 0, -1);
   private readonly planarRight = new THREE.Vector3(1, 0, 0);
-  private yaw: number = GAME_CONFIG.camera.yaw;
-  private pitch: number = GAME_CONFIG.camera.pitch;
-  private distance: number = GAME_CONFIG.camera.distance;
+  private pointerLocked = false;
   private dragging = false;
   private pointerId: number | null = null;
   private lastPointerX = 0;
   private lastPointerY = 0;
+  private mouseDeltaX = 0;
+  private mouseDeltaY = 0;
+  private yaw = GAME_CONFIG.camera.yaw;
+  private pitch = GAME_CONFIG.camera.pitch;
+  private distance = GAME_CONFIG.camera.distance;
+  private collisionDistance = GAME_CONFIG.camera.distance;
   private initialized = false;
 
-  constructor(camera: THREE.PerspectiveCamera, canvas: HTMLCanvasElement, blockers: THREE.Object3D[]) {
-    this.camera = camera;
-    this.canvas = canvas;
-    this.blockers = blockers;
+  constructor(
+    private readonly camera: THREE.PerspectiveCamera,
+    private readonly canvas: HTMLCanvasElement,
+    private readonly blockers: THREE.Object3D[],
+  ) {
     this.bindEvents();
   }
 
-  update(delta: number, target: THREE.Vector3): void {
+  update(
+    delta: number,
+    target: THREE.Vector3,
+    velocity: THREE.Vector3,
+    sprintBlend: number,
+    gamepadLook: LookAxes,
+  ): void {
+    this.consumeLook(delta, gamepadLook);
+    this.planarForward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).normalize();
+    this.planarRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).normalize();
+
+    this.velocityLookAhead.copy(velocity).setY(0).multiplyScalar(GAME_CONFIG.camera.lookAheadSeconds);
+    if (this.velocityLookAhead.length() > GAME_CONFIG.camera.maxLookAhead) {
+      this.velocityLookAhead.setLength(GAME_CONFIG.camera.maxLookAhead);
+    }
+    this.desiredTarget.copy(target).add(this.velocityLookAhead);
     const targetAlpha = 1 - Math.exp(-GAME_CONFIG.camera.targetSharpness * delta);
     if (!this.initialized) {
-      this.smoothedTarget.copy(target);
+      this.smoothedTarget.copy(this.desiredTarget);
       this.initialized = true;
     } else {
-      this.smoothedTarget.lerp(target, targetAlpha);
+      this.smoothedTarget.lerp(this.desiredTarget, targetAlpha);
     }
 
     const horizontal = Math.cos(this.pitch) * this.distance;
-    this.cameraDirection.set(
+    this.cameraVector.set(
       Math.sin(this.yaw) * horizontal,
       Math.sin(this.pitch) * this.distance,
       Math.cos(this.yaw) * horizontal,
     );
-    this.desiredPosition.copy(this.smoothedTarget).add(this.cameraDirection);
+    this.shoulder.copy(this.planarRight).multiplyScalar(GAME_CONFIG.camera.shoulderOffset);
+    this.desiredPosition.copy(this.smoothedTarget).add(this.shoulder).add(this.cameraVector);
 
-    const collisionVector = this.desiredPosition.clone().sub(this.smoothedTarget);
-    const desiredDistance = collisionVector.length();
-    if (desiredDistance > 0.001) {
+    const castOrigin = this.smoothedTarget.clone().add(this.shoulder.multiplyScalar(0.35));
+    const collisionVector = this.desiredPosition.clone().sub(castOrigin);
+    const fullDistance = collisionVector.length();
+    let safeDistance = fullDistance;
+    if (fullDistance > 0.001) {
       collisionVector.normalize();
-      this.raycaster.set(this.smoothedTarget, collisionVector);
-      this.raycaster.near = 0.28;
-      this.raycaster.far = desiredDistance;
+      this.raycaster.set(castOrigin, collisionVector);
+      this.raycaster.near = 0.2;
+      this.raycaster.far = fullDistance;
       const hit = this.raycaster.intersectObjects(this.blockers, true)[0];
       if (hit) {
-        const safeDistance = Math.max(GAME_CONFIG.camera.collisionMinDistance, hit.distance - GAME_CONFIG.camera.collisionPadding);
-        this.desiredPosition.copy(this.smoothedTarget).addScaledVector(collisionVector, safeDistance);
+        safeDistance = Math.max(
+          GAME_CONFIG.camera.collisionMinDistance,
+          hit.distance - GAME_CONFIG.camera.collisionPadding,
+        );
       }
     }
+
+    const collisionSharpness = safeDistance < this.collisionDistance
+      ? GAME_CONFIG.camera.collisionInSharpness
+      : GAME_CONFIG.camera.collisionOutSharpness;
+    this.collisionDistance += (safeDistance - this.collisionDistance) * (1 - Math.exp(-collisionSharpness * delta));
+    this.desiredPosition.copy(castOrigin).addScaledVector(collisionVector.normalize(), this.collisionDistance);
 
     const positionAlpha = 1 - Math.exp(-GAME_CONFIG.camera.positionSharpness * delta);
     if (this.camera.position.lengthSq() === 0) this.camera.position.copy(this.desiredPosition);
     else this.camera.position.lerp(this.desiredPosition, positionAlpha);
     this.camera.lookAt(this.smoothedTarget);
 
-    this.planarForward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).normalize();
-    this.planarRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).normalize();
+    const targetFov = THREE.MathUtils.lerp(GAME_CONFIG.camera.fov, GAME_CONFIG.camera.sprintFov, sprintBlend);
+    this.camera.fov += (targetFov - this.camera.fov) * (1 - Math.exp(-6 * delta));
+    this.camera.updateProjectionMatrix();
   }
 
   copyPlanarForward(target: THREE.Vector3): THREE.Vector3 {
@@ -75,7 +108,14 @@ export class ThirdPersonCamera {
     return target.copy(this.planarRight);
   }
 
+  isLocked(): boolean {
+    return this.pointerLocked;
+  }
+
   dispose(): void {
+    document.removeEventListener('pointerlockchange', this.onPointerLockChange);
+    document.removeEventListener('mousemove', this.onMouseMove);
+    this.canvas.removeEventListener('click', this.onClick);
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     this.canvas.removeEventListener('pointermove', this.onPointerMove);
     this.canvas.removeEventListener('pointerup', this.onPointerUp);
@@ -84,6 +124,9 @@ export class ThirdPersonCamera {
   }
 
   private bindEvents(): void {
+    document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    document.addEventListener('mousemove', this.onMouseMove);
+    this.canvas.addEventListener('click', this.onClick);
     this.canvas.addEventListener('pointerdown', this.onPointerDown);
     this.canvas.addEventListener('pointermove', this.onPointerMove);
     this.canvas.addEventListener('pointerup', this.onPointerUp);
@@ -91,8 +134,36 @@ export class ThirdPersonCamera {
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
   }
 
+  private consumeLook(delta: number, gamepadLook: LookAxes): void {
+    this.yaw -= this.mouseDeltaX * GAME_CONFIG.camera.mouseSensitivity;
+    this.pitch += this.mouseDeltaY * GAME_CONFIG.camera.mouseSensitivity;
+    this.mouseDeltaX = 0;
+    this.mouseDeltaY = 0;
+    this.yaw -= gamepadLook.horizontal * GAME_CONFIG.camera.gamepadLookSpeed * delta;
+    this.pitch += gamepadLook.vertical * GAME_CONFIG.camera.gamepadLookSpeed * delta;
+    this.pitch = THREE.MathUtils.clamp(this.pitch, 0.08, 0.9);
+  }
+
+  private readonly onClick = (): void => {
+    if (!this.pointerLocked && document.pointerLockElement === null) {
+      void this.canvas.requestPointerLock();
+    }
+  };
+
+  private readonly onPointerLockChange = (): void => {
+    this.pointerLocked = document.pointerLockElement === this.canvas;
+    this.dragging = false;
+    this.pointerId = null;
+  };
+
+  private readonly onMouseMove = (event: MouseEvent): void => {
+    if (!this.pointerLocked) return;
+    this.mouseDeltaX += event.movementX;
+    this.mouseDeltaY += event.movementY;
+  };
+
   private readonly onPointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0 && event.button !== 2) return;
+    if (this.pointerLocked || (event.button !== 0 && event.button !== 2)) return;
     this.dragging = true;
     this.pointerId = event.pointerId;
     this.lastPointerX = event.clientX;
@@ -101,18 +172,13 @@ export class ThirdPersonCamera {
   };
 
   private readonly onPointerMove = (event: PointerEvent): void => {
-    if (!this.dragging || event.pointerId !== this.pointerId) return;
+    if (!this.dragging || this.pointerLocked || event.pointerId !== this.pointerId) return;
     const deltaX = event.clientX - this.lastPointerX;
     const deltaY = event.clientY - this.lastPointerY;
     this.lastPointerX = event.clientX;
     this.lastPointerY = event.clientY;
-
-    this.yaw -= deltaX * GAME_CONFIG.camera.orbitSensitivity;
-    this.pitch = THREE.MathUtils.clamp(
-      this.pitch + deltaY * GAME_CONFIG.camera.orbitSensitivity,
-      0.12,
-      0.92,
-    );
+    this.mouseDeltaX += deltaX * (GAME_CONFIG.camera.dragSensitivity / GAME_CONFIG.camera.mouseSensitivity);
+    this.mouseDeltaY += deltaY * (GAME_CONFIG.camera.dragSensitivity / GAME_CONFIG.camera.mouseSensitivity);
   };
 
   private readonly onPointerUp = (event: PointerEvent): void => {
