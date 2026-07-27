@@ -311,3 +311,133 @@ kbd { min-width: 58px; padding: 1px 5px; border: 1px solid rgba(181, 171, 154, 0
   .interaction-prompt { bottom: 96px; max-width: 82vw; text-align:center; }
   .notice-panel { top: 24%; width: 88vw; }
 }
+
+/* Production Pass 6: first boss encounter */
+.boss-panel {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(28px, 4.8vh, 54px);
+  width: min(820px, 78vw);
+  transform: translateX(-50%);
+  text-shadow: 0 3px 18px #000;
+  transition: opacity 220ms ease, filter 260ms ease;
+}
+.boss-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 9px;
+}
+.boss-heading p {
+  margin: 0 0 2px;
+  color: #9f9689;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: .66rem;
+  letter-spacing: .19em;
+}
+.boss-heading h2 {
+  margin: 0;
+  color: #e3dbcf;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1rem, 2vw, 1.38rem);
+  font-weight: 400;
+  letter-spacing: .16em;
+}
+.boss-heading > span {
+  color: #b5aa98;
+  font-family: Georgia, serif;
+  font-size: .67rem;
+  letter-spacing: .15em;
+  white-space: nowrap;
+}
+.boss-health-track,
+.boss-shield-track,
+.boss-poise-track {
+  position: relative;
+  overflow: hidden;
+  background: rgba(4, 5, 6, .9);
+  border: 1px solid rgba(204, 190, 166, .28);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .72);
+}
+.boss-health-track { height: 11px; }
+.boss-shield-track { width: 62%; height: 4px; margin-top: 5px; border-color: rgba(194, 167, 117, .24); }
+.boss-poise-track { width: 42%; height: 3px; margin-top: 4px; border-color: rgba(170, 154, 131, .16); }
+.boss-health-track span,
+.boss-shield-track span,
+.boss-poise-track span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  transition: transform 100ms linear, filter 280ms ease;
+}
+.boss-health-track span { background: linear-gradient(90deg, #351010, #7c2723 68%, #a34e37); }
+.boss-shield-track span { background: linear-gradient(90deg, #4b4740, #a28b62 72%, #d2b77d); box-shadow: 0 0 12px rgba(206, 171, 112, .35); }
+.boss-poise-track span { background: linear-gradient(90deg, #4a3824, #b37a3e); }
+.boss-phase-two .boss-health-track span { filter: saturate(1.25) brightness(1.12); background: linear-gradient(90deg, #42100d, #9d2b20 68%, #d26836); }
+.boss-phase-two .boss-heading > span { color: #d09a68; }
+.boss-phase-two .boss-panel { filter: drop-shadow(0 0 14px rgba(166, 54, 24, .2)); }
+
+.boss-cinematic {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  width: min(720px, 86vw);
+  transform: translate(-50%, -50%);
+  text-align: center;
+  text-shadow: 0 5px 28px #000;
+  pointer-events: none;
+}
+.boss-cinematic p {
+  margin: 0 0 9px;
+  color: #aaa092;
+  font-family: Georgia, serif;
+  font-size: clamp(.72rem, 1.5vw, .9rem);
+  letter-spacing: .24em;
+}
+.boss-cinematic h2 {
+  margin: 0;
+  color: #e6ded2;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2rem, 6vw, 5rem);
+  font-weight: 400;
+  letter-spacing: .13em;
+}
+.boss-cinematic span {
+  display: block;
+  width: min(360px, 58vw);
+  height: 1px;
+  margin: 18px auto 0;
+  background: linear-gradient(90deg, transparent, rgba(205, 169, 108, .8), transparent);
+}
+.boss-intro { animation: boss-intro-reveal 2.7s ease both; }
+.boss-phase-banner { animation: boss-phase-reveal 2.3s ease both; }
+.boss-phase-banner h2 { color: #dda06e; font-size: clamp(1.5rem, 4.5vw, 3.6rem); }
+.boss-victory { top: 42%; animation: boss-victory-reveal 4.2s ease both; }
+.boss-victory p { color: #c4ad83; }
+.boss-victory h2 { color: #e6d5b5; }
+
+@keyframes boss-intro-reveal {
+  0%, 8% { opacity: 0; filter: blur(8px); transform: translate(-50%, -42%); }
+  24%, 68% { opacity: 1; filter: blur(0); transform: translate(-50%, -50%); }
+  100% { opacity: 0; filter: blur(5px); transform: translate(-50%, -57%); }
+}
+@keyframes boss-phase-reveal {
+  0%, 12% { opacity: 0; filter: blur(6px); transform: translate(-50%, -44%) scale(.96); }
+  30%, 70% { opacity: 1; filter: blur(0); transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; filter: blur(4px); transform: translate(-50%, -55%) scale(1.02); }
+}
+@keyframes boss-victory-reveal {
+  0%, 8% { opacity: 0; filter: blur(9px); }
+  24%, 64% { opacity: 1; filter: blur(0); }
+  100% { opacity: 0; filter: blur(5px); }
+}
+
+@media (max-width: 760px) {
+  .boss-panel { width: 88vw; bottom: 22px; }
+  .boss-heading p { display: none; }
+  .boss-heading h2 { font-size: 1rem; }
+  .boss-heading > span { font-size: .6rem; }
+  .boss-health-track { height: 9px; }
+}

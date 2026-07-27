@@ -12,6 +12,9 @@ export interface AttackPulse {
   readonly poiseDamage: number;
   readonly impact: number;
   readonly weight: 'light' | 'medium' | 'heavy';
+  readonly guardable?: boolean;
+  readonly parryable?: boolean;
+  readonly radial?: boolean;
 }
 
 export type EnemyDamageResult = 'ignored' | 'hit' | 'broken' | 'killed';
@@ -23,4 +26,17 @@ export interface LockTargetSnapshot {
   readonly poiseRatio: number;
   readonly executable: boolean;
   readonly active: boolean;
+}
+
+export interface BossSnapshot {
+  readonly name: string;
+  readonly epithet: string;
+  readonly healthRatio: number;
+  readonly poiseRatio: number;
+  readonly shieldRatio: number;
+  readonly phase: 1 | 2;
+  readonly active: boolean;
+  readonly intro: boolean;
+  readonly phaseTransition: boolean;
+  readonly defeated: boolean;
 }

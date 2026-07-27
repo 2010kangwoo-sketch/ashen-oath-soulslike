@@ -122,7 +122,13 @@ export class PlayerController {
     });
   }
 
-  receiveDamage(amount: number, impactDirection: THREE.Vector3, impact: number): DamageResult {
+  receiveDamage(
+    amount: number,
+    impactDirection: THREE.Vector3,
+    impact: number,
+    guardable = true,
+    parryable = true,
+  ): DamageResult {
     if (this.invulnerable || this.action === 'dead') return 'evaded';
 
     const incoming = this.scratchDirection.copy(impactDirection).setY(0).normalize().negate();
@@ -130,12 +136,12 @@ export class PlayerController {
     const parryActive = this.action === 'parry'
       && this.actionTimer >= GAME_CONFIG.player.parryWindowStart
       && this.actionTimer <= GAME_CONFIG.player.parryWindowEnd;
-    if (parryActive && frontFacing) {
+    if (parryable && parryActive && frontFacing) {
       this.staminaRegenDelay = GAME_CONFIG.player.staminaRegenDelay;
       return 'parried';
     }
 
-    if (this.action === 'guard' && frontFacing) {
+    if (guardable && this.action === 'guard' && frontFacing) {
       const staminaDamage = amount * GAME_CONFIG.player.guardStaminaMultiplier;
       if (this.stamina >= staminaDamage) {
         this.stamina -= staminaDamage;

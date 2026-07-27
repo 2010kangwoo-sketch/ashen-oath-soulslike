@@ -1,7 +1,7 @@
 {
   "name": "ashen-oath-soulslike",
   "private": true,
-  "version": "0.5.0-production-pass5",
+  "version": "0.6.0-production-pass6",
   "type": "module",
   "description": "A compact, release-targeted browser 3D soulslike built with Three.js and Rapier.",
   "engines": {
@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "build": "vite build",
     "preview": "vite preview",
-    "verify": "npm run typecheck && npm run build && node tools/verify-production-pass5.mjs"
+    "verify": "npm run typecheck && npm run build && node tools/verify-production-pass6.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.19.3",

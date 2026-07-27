@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import RAPIER, { type RigidBody } from '@dimforge/rapier3d-compat';
+import RAPIER, { type Collider, type RigidBody } from '@dimforge/rapier3d-compat';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { AtmosphereSystem } from './AtmosphereSystem';
 import { SurfaceFactory } from './SurfaceFactory';
@@ -27,6 +27,17 @@ export class CathedralApproach {
   private readonly atmosphere: AtmosphereSystem;
   private readonly dynamicDebris: DynamicDebris[] = [];
   private readonly banners: THREE.Mesh[] = [];
+  private readonly bossFogPlanes: THREE.Mesh[] = [];
+  private readonly bossFogGroup = new THREE.Group();
+  private readonly bossExitGate = new THREE.Group();
+  private bossFogBody!: RigidBody;
+  private bossFogCollider!: Collider;
+  private bossExitBody!: RigidBody;
+  private bossExitCollider!: Collider;
+  private bossEncounterActive = false;
+  private bossDefeated = false;
+  private bossFogBlend = 0;
+  private bossExitBlend = 0;
   private elapsed = 0;
 
   constructor(scene: THREE.Scene, private readonly physics: PhysicsWorld) {
@@ -43,6 +54,7 @@ export class CathedralApproach {
     this.createSideRoutes();
     this.createBellCloister();
     this.createAshenAltar();
+    this.createBossArena();
     this.createReturnPassages();
     this.createRubbleAndWear();
     this.createDynamicDebris();
@@ -59,6 +71,7 @@ export class CathedralApproach {
       banner.rotation.z = Math.sin(this.elapsed * 0.72 + phase) * 0.045;
       banner.rotation.x = Math.sin(this.elapsed * 1.1 + phase * 0.7) * 0.025;
     }
+    this.updateBossArena(delta);
     for (const debris of this.dynamicDebris) {
       debris.cooldown = Math.max(0, debris.cooldown - delta);
       const position = debris.body.translation();
@@ -71,6 +84,12 @@ export class CathedralApproach {
         debris.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
       }
     }
+  }
+
+
+  setBossEncounterState(active: boolean, defeated: boolean): void {
+    this.bossEncounterActive = active;
+    this.bossDefeated = defeated;
   }
 
   applyPlayerInfluence(position: THREE.Vector3, velocity: THREE.Vector3): void {
@@ -342,6 +361,164 @@ export class CathedralApproach {
     this.atmosphere.addTorch(new THREE.Vector3(-8.5, 3.2, -67), 44);
     this.atmosphere.addTorch(new THREE.Vector3(8.5, 3.2, -67), 44);
     this.atmosphere.addTorch(new THREE.Vector3(0, 4.2, -79), 52);
+  }
+
+  private createBossArena(): void {
+    // The first boss arena sits beyond the raised altar dais. The stairs force a
+    // deliberate threshold crossing while keeping the return path readable after
+    // death. All gameplay boundaries use Rapier colliders through addStaticBox.
+    for (let index = 0; index < 5; index += 1) {
+      const height = 0.2 * (index + 1);
+      this.addStaticBox(
+        `boss-dais-ascent-${index}`,
+        [8.6, height, 0.9],
+        [0, 1.2 + height / 2, -74.7 - index * 0.78],
+        index % 2 === 0 ? this.paleStone : this.wornStone,
+        undefined,
+        true,
+      );
+      const descentHeight = 1.0 - index * 0.2;
+      this.addStaticBox(
+        `boss-dais-descent-${index}`,
+        [8.6, Math.max(0.2, descentHeight), 0.9],
+        [0, 1.2 + Math.max(0.2, descentHeight) / 2, -84.0 - index * 0.78],
+        index % 2 === 0 ? this.wornStone : this.paleStone,
+        undefined,
+        true,
+      );
+    }
+
+    this.addStaticBox('boss-threshold', [12.5, 1.0, 9.5], [0, 0.5, -88.4], this.wornStone, undefined, true);
+    this.addStaticBox('varkan-arena-floor', [32, 1.2, 34], [0, 0.6, -103], this.paleStone, undefined, true);
+    this.addStaticBox('varkan-arena-west-wall', [1.4, 8.0, 35], [-16.2, 4.0, -102], this.basalt, undefined, true);
+    this.addStaticBox('varkan-arena-east-wall', [1.4, 8.0, 35], [16.2, 4.0, -102], this.basalt, undefined, true);
+    this.addStaticBox('varkan-arena-north-wall-left', [11.5, 8.0, 1.4], [-10.6, 4.0, -119.2], this.basalt, undefined, true);
+    this.addStaticBox('varkan-arena-north-wall-right', [11.5, 8.0, 1.4], [10.6, 4.0, -119.2], this.basalt, undefined, true);
+    this.addStaticBox('varkan-arena-entry-buttress-left', [2.2, 6.4, 3.2], [-6.7, 3.2, -89.4], this.basalt, undefined, true);
+    this.addStaticBox('varkan-arena-entry-buttress-right', [2.2, 6.4, 3.2], [6.7, 3.2, -89.4], this.basalt, undefined, true);
+    this.addStaticBox('varkan-arena-cover-left', [3.4, 1.5, 2.6], [-8.4, 1.95, -103.4], this.wornStone, new THREE.Euler(0, 0.22, 0), true);
+    this.addStaticBox('varkan-arena-cover-right', [3.1, 1.3, 2.8], [8.8, 1.85, -106.2], this.wornStone, new THREE.Euler(0, -0.18, 0), true);
+
+    const arenaRing = new THREE.Mesh(new THREE.RingGeometry(8.6, 11.8, 96, 3), this.wornStone);
+    arenaRing.rotation.x = -Math.PI / 2;
+    arenaRing.position.set(0, 1.22, -104.2);
+    arenaRing.receiveShadow = true;
+    this.group.add(arenaRing);
+    for (let index = 0; index < 12; index += 1) {
+      const angle = (index / 12) * Math.PI * 2;
+      const radius = index % 2 === 0 ? 7.2 : 10.1;
+      const rune = new THREE.Mesh(new THREE.BoxGeometry(index % 2 === 0 ? 0.15 : 0.08, 0.035, 2.1), this.bronze);
+      rune.position.set(Math.sin(angle) * radius, 1.245, -104.2 + Math.cos(angle) * radius);
+      rune.rotation.y = angle;
+      this.group.add(rune);
+    }
+
+    for (const side of [-1, 1]) {
+      for (let index = 0; index < 3; index += 1) {
+        const z = -94 - index * 10.2;
+        this.createColumn(`varkan-arena-column-${side}-${index}`, new THREE.Vector3(side * 12.7, 1.2, z), 7.2, 0.72, index === 1 && side < 0);
+        const chainRoot = new THREE.Group();
+        chainRoot.position.set(side * 11.2, 8.8, z - 1.8);
+        for (let linkIndex = 0; linkIndex < 18; linkIndex += 1) {
+          const link = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.03, 6, 12), this.blackIron);
+          link.position.y = -linkIndex * 0.31;
+          link.rotation.y = linkIndex % 2 === 0 ? 0 : Math.PI / 2;
+          chainRoot.add(link);
+        }
+        this.group.add(chainRoot);
+      }
+    }
+
+    const throne = new THREE.Group();
+    throne.position.set(0, 1.2, -114.8);
+    const throneSeat = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.1, 2.1), this.basalt);
+    throneSeat.position.y = 0.55;
+    throneSeat.castShadow = true;
+    throne.add(throneSeat);
+    const throneBack = new THREE.Mesh(new THREE.BoxGeometry(4.2, 6.8, 0.9), this.wornStone);
+    throneBack.position.set(0, 3.4, 0.55);
+    throneBack.castShadow = true;
+    throne.add(throneBack);
+    for (const x of [-1.65, 1.65]) {
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.36, 2.8, 7), this.blackIron);
+      horn.position.set(x, 7.1, 0.5);
+      horn.rotation.z = x < 0 ? -0.18 : 0.18;
+      throne.add(horn);
+    }
+    this.group.add(throne);
+
+    const fogMaterial = new THREE.MeshBasicMaterial({
+      color: 0xcbbfa9,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.bossFogGroup.position.set(0, 3.7, -89.25);
+    this.bossFogGroup.visible = false;
+    for (let index = 0; index < 8; index += 1) {
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(11.8, 5.5, 10, 5), fogMaterial.clone());
+      plane.position.z = (index - 3.5) * 0.08;
+      plane.rotation.y = index % 2 === 0 ? 0.02 : -0.02;
+      plane.userData.phase = index * 0.83;
+      this.bossFogGroup.add(plane);
+      this.bossFogPlanes.push(plane);
+    }
+    this.group.add(this.bossFogGroup);
+    this.bossFogBody = this.physics.world.createRigidBody(
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 3.7, -89.25),
+    );
+    this.bossFogCollider = this.physics.world.createCollider(
+      RAPIER.ColliderDesc.cuboid(5.9, 2.75, 0.28).setFriction(0.9),
+      this.bossFogBody,
+    );
+    this.bossFogCollider.setEnabled(false);
+
+    const iron = this.blackIron;
+    this.bossExitGate.position.set(0, 4.1, -117.85);
+    for (let index = -5; index <= 5; index += 1) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.14, 6.2, 0.16), iron);
+      bar.position.x = index * 0.82;
+      bar.castShadow = true;
+      this.bossExitGate.add(bar);
+    }
+    const exitCross = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.18, 0.2), iron);
+    this.bossExitGate.add(exitCross);
+    this.group.add(this.bossExitGate);
+    this.bossExitBody = this.physics.world.createRigidBody(
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 4.1, -117.85),
+    );
+    this.bossExitCollider = this.physics.world.createCollider(
+      RAPIER.ColliderDesc.cuboid(4.6, 3.1, 0.3).setFriction(0.9),
+      this.bossExitBody,
+    );
+
+    this.atmosphere.addTorch(new THREE.Vector3(-10.8, 3.5, -94), 49);
+    this.atmosphere.addTorch(new THREE.Vector3(10.8, 3.5, -94), 49);
+    this.atmosphere.addTorch(new THREE.Vector3(-10.8, 3.5, -112), 54);
+    this.atmosphere.addTorch(new THREE.Vector3(10.8, 3.5, -112), 54);
+  }
+
+  private updateBossArena(delta: number): void {
+    const fogTarget = this.bossEncounterActive && !this.bossDefeated ? 1 : 0;
+    this.bossFogBlend += (fogTarget - this.bossFogBlend) * (1 - Math.exp(-5.5 * delta));
+    this.bossFogGroup.visible = this.bossFogBlend > 0.015;
+    this.bossFogPlanes.forEach((plane, index) => {
+      const phase = Number(plane.userData.phase ?? index);
+      const material = plane.material as THREE.MeshBasicMaterial;
+      material.opacity = this.bossFogBlend * (0.12 + (index % 3) * 0.035);
+      plane.position.x = Math.sin(this.elapsed * (0.42 + index * 0.025) + phase) * 0.22;
+      plane.scale.y = 1 + Math.sin(this.elapsed * 0.8 + phase) * 0.035;
+    });
+    this.bossFogCollider.setEnabled(fogTarget > 0.5);
+
+    const exitTarget = this.bossDefeated ? 1 : 0;
+    this.bossExitBlend += (exitTarget - this.bossExitBlend) * (1 - Math.exp(-2.2 * delta));
+    const exitY = THREE.MathUtils.lerp(4.1, 11.0, this.bossExitBlend * this.bossExitBlend * (3 - 2 * this.bossExitBlend));
+    this.bossExitGate.position.y = exitY;
+    this.bossExitBody.setNextKinematicTranslation({ x: 0, y: exitY, z: -117.85 });
+    this.bossExitCollider.setEnabled(!this.bossDefeated || this.bossExitBlend <= 0.96);
   }
 
   private createReturnPassages(): void {

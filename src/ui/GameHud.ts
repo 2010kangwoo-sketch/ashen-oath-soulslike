@@ -1,5 +1,6 @@
 import type { Camera } from 'three';
-import type { LockTargetSnapshot } from '../combat/CombatTypes';
+import type { BossSnapshot, LockTargetSnapshot } from '../combat/CombatTypes';
+import type { BossPresentationEvent } from '../enemy/GatewardenVarkan';
 import type { PlayerMotionState } from '../player/PlayerController';
 import type { ProgressionSnapshot } from '../progression/ProgressionDirector';
 
@@ -31,7 +32,21 @@ export class GameHud {
   private readonly areaTitle: HTMLElement;
   private readonly areaTitleName: HTMLElement;
   private readonly objectiveText: HTMLElement;
+  private readonly bossPanel: HTMLElement;
+  private readonly bossName: HTMLElement;
+  private readonly bossEpithet: HTMLElement;
+  private readonly bossHealthFill: HTMLElement;
+  private readonly bossPoiseFill: HTMLElement;
+  private readonly bossShieldTrack: HTMLElement;
+  private readonly bossShieldFill: HTMLElement;
+  private readonly bossPhaseLabel: HTMLElement;
+  private readonly bossIntro: HTMLElement;
+  private readonly bossIntroEpithet: HTMLElement;
+  private readonly bossIntroName: HTMLElement;
+  private readonly bossPhaseBanner: HTMLElement;
+  private readonly bossVictory: HTMLElement;
   private currentArea = '';
+  private bossActive = false;
   private debugVisible = false;
 
   constructor() {
@@ -62,6 +77,19 @@ export class GameHud {
     this.areaTitle = this.requireElement('area-title');
     this.areaTitleName = this.requireElement('area-title-name');
     this.objectiveText = this.requireElement('objective-text');
+    this.bossPanel = this.requireElement('boss-panel');
+    this.bossName = this.requireElement('boss-name');
+    this.bossEpithet = this.requireElement('boss-epithet');
+    this.bossHealthFill = this.requireElement('boss-health-fill');
+    this.bossPoiseFill = this.requireElement('boss-poise-fill');
+    this.bossShieldTrack = this.requireElement('boss-shield-track');
+    this.bossShieldFill = this.requireElement('boss-shield-fill');
+    this.bossPhaseLabel = this.requireElement('boss-phase-label');
+    this.bossIntro = this.requireElement('boss-intro');
+    this.bossIntroEpithet = this.requireElement('boss-intro-epithet');
+    this.bossIntroName = this.requireElement('boss-intro-name');
+    this.bossPhaseBanner = this.requireElement('boss-phase-banner');
+    this.bossVictory = this.requireElement('boss-victory');
   }
 
   reveal(): void {
@@ -106,7 +134,7 @@ export class GameHud {
   setLockTarget(snapshot: LockTargetSnapshot | null, camera: Camera): void {
     const projected = snapshot?.position.clone().project(camera);
     const visible = (snapshot?.active ?? false) && Boolean(projected && projected.z < 1);
-    this.lockPanel.classList.toggle('is-hidden', !visible);
+    this.lockPanel.classList.toggle('is-hidden', !visible || this.bossActive);
     this.lockReticle.classList.toggle('is-hidden', !visible);
     if (!snapshot || !visible) {
       this.executionPrompt.classList.add('is-hidden');
@@ -115,10 +143,38 @@ export class GameHud {
     this.lockName.textContent = snapshot.name;
     this.lockHealthFill.style.transform = `scaleX(${clamp01(snapshot.healthRatio)})`;
     this.lockPoiseFill.style.transform = `scaleX(${clamp01(snapshot.poiseRatio)})`;
-    this.executionPrompt.classList.toggle('is-hidden', !snapshot.executable);
+    this.executionPrompt.classList.toggle('is-hidden', !snapshot.executable || this.bossActive);
     if (projected) {
       this.lockReticle.style.left = `${(projected.x * 0.5 + 0.5) * 100}%`;
       this.lockReticle.style.top = `${(-projected.y * 0.5 + 0.5) * 100}%`;
+    }
+  }
+
+  setBoss(snapshot: BossSnapshot, event: BossPresentationEvent | null): void {
+    this.bossActive = snapshot.active;
+    this.bossPanel.classList.toggle('is-hidden', !snapshot.active);
+    if (snapshot.active) {
+      this.bossName.textContent = snapshot.name;
+      this.bossEpithet.textContent = snapshot.epithet;
+      this.bossHealthFill.style.transform = `scaleX(${clamp01(snapshot.healthRatio)})`;
+      this.bossPoiseFill.style.transform = `scaleX(${clamp01(snapshot.poiseRatio)})`;
+      this.bossShieldFill.style.transform = `scaleX(${clamp01(snapshot.shieldRatio)})`;
+      this.bossShieldTrack.classList.toggle('is-hidden', snapshot.phase !== 1 || snapshot.shieldRatio <= 0);
+      this.bossPhaseLabel.textContent = snapshot.phase === 1 ? 'I · 검은 방패' : 'II · 맹세의 칼날';
+      this.root.classList.toggle('boss-phase-two', snapshot.phase === 2 || snapshot.phaseTransition);
+    } else {
+      this.root.classList.remove('boss-phase-two');
+    }
+
+    if (event === 'intro') {
+      this.bossIntroEpithet.textContent = snapshot.epithet;
+      this.bossIntroName.textContent = snapshot.name;
+      this.showTimedPanel(this.bossIntro, 2700);
+    } else if (event === 'phase2') {
+      this.showTimedPanel(this.bossPhaseBanner, 2300);
+    } else if (event === 'defeated') {
+      this.bossPanel.classList.add('is-hidden');
+      this.showTimedPanel(this.bossVictory, 4200);
     }
   }
 
@@ -162,6 +218,20 @@ export class GameHud {
   toggleDebug(): void {
     this.debugVisible = !this.debugVisible;
     this.debug.classList.toggle('is-hidden', !this.debugVisible);
+  }
+
+  private showTimedPanel(element: HTMLElement, duration: number): void {
+    const previousTimer = Number(element.dataset.hideTimer ?? 0);
+    if (previousTimer) window.clearTimeout(previousTimer);
+    element.classList.remove('is-hidden');
+    element.style.animation = 'none';
+    void element.offsetWidth;
+    element.style.animation = '';
+    const timer = window.setTimeout(() => {
+      element.classList.add('is-hidden');
+      element.dataset.hideTimer = '0';
+    }, duration);
+    element.dataset.hideTimer = String(timer);
   }
 
   private requireElement(id: string): HTMLElement {

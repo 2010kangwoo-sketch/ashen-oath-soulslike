@@ -53,6 +53,37 @@
 
         <div id="lock-reticle" class="lock-reticle is-hidden" aria-hidden="true"><span></span></div>
 
+        <div id="boss-panel" class="boss-panel is-hidden" aria-live="polite">
+          <div class="boss-heading">
+            <div>
+              <p id="boss-epithet">검은 방패의 서약자</p>
+              <h2 id="boss-name">문지기 바르칸</h2>
+            </div>
+            <span id="boss-phase-label">I · 검은 방패</span>
+          </div>
+          <div class="boss-health-track"><span id="boss-health-fill"></span></div>
+          <div id="boss-shield-track" class="boss-shield-track"><span id="boss-shield-fill"></span></div>
+          <div class="boss-poise-track"><span id="boss-poise-fill"></span></div>
+        </div>
+
+        <div id="boss-intro" class="boss-cinematic boss-intro is-hidden" role="status">
+          <p id="boss-intro-epithet">검은 방패의 서약자</p>
+          <h2 id="boss-intro-name">문지기 바르칸</h2>
+          <span></span>
+        </div>
+
+        <div id="boss-phase-banner" class="boss-cinematic boss-phase-banner is-hidden" role="status">
+          <p>두 번째 서약</p>
+          <h2>방패를 버린 맹세의 칼날</h2>
+          <span></span>
+        </div>
+
+        <div id="boss-victory" class="boss-cinematic boss-victory is-hidden" role="status">
+          <p>서약의 문이 열렸습니다</p>
+          <h2>문지기 격파</h2>
+          <span></span>
+        </div>
+
         <div id="execution-prompt" class="execution-prompt is-hidden"><kbd>E</kbd><span>처형</span></div>
         <div id="interaction-prompt" class="interaction-prompt is-hidden"></div>
         <div id="notice-panel" class="notice-panel is-hidden" role="status"></div>

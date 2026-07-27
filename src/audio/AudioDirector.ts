@@ -138,6 +138,44 @@ export class AudioDirector {
     this.playNoiseBurst(now, 0.72, 35, 1100, 0.055);
   }
 
+  bossIntro(): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playOscillator(now, 'sine', 72, 54, 2.6, 0.085);
+    this.playOscillator(now + 0.12, 'triangle', 144, 108, 2.1, 0.038);
+    this.playOscillator(now + 0.26, 'sine', 216, 162, 1.8, 0.022);
+    this.playNoiseBurst(now, 0.9, 28, 780, 0.065);
+  }
+
+  bossPhase(): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playNoiseBurst(now, 0.62, 45, 2800, 0.15);
+    this.playOscillator(now, 'sawtooth', 98, 32, 0.72, 0.13);
+    this.playOscillator(now + 0.08, 'square', 196, 58, 0.56, 0.055);
+  }
+
+  shieldBreak(): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playNoiseBurst(now, 0.42, 320, 9200, 0.17);
+    this.playOscillator(now, 'triangle', 680, 110, 0.46, 0.11);
+    this.playOscillator(now + 0.02, 'square', 310, 74, 0.38, 0.065);
+  }
+
+  bossDefeat(): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playNoiseBurst(now, 0.95, 30, 1600, 0.12);
+    this.playOscillator(now, 'sawtooth', 112, 24, 1.6, 0.095);
+    this.playOscillator(now + 0.3, 'sine', 220, 146, 2.4, 0.055);
+    this.playOscillator(now + 0.48, 'triangle', 330, 220, 1.9, 0.026);
+  }
+
   enemyTell(weight: SwingWeight): void {
     const ctx = this.readyContext();
     if (!ctx) return;

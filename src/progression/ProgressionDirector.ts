@@ -120,7 +120,7 @@ export class ProgressionDirector {
     this.updateShrines(delta);
     this.updateShortcuts(delta);
     this.updateRecovery(delta, player);
-    this.updateArea(this.playerPosition);
+    this.updateArea(this.playerPosition, combat);
 
     if (player.isDead()) {
       if (!this.deathHandled) this.beginDeath(player);
@@ -433,10 +433,19 @@ export class ProgressionDirector {
     }
   }
 
-  private updateArea(position: THREE.Vector3): void {
-    if (position.z < -54) {
+  private updateArea(position: THREE.Vector3, combat: CombatDirector): void {
+    if (position.z < -88) {
+      this.areaName = '서약의 문 앞뜰';
+      this.objective = combat.isBossDefeated()
+        ? '쓰러진 문지기 뒤의 열린 문으로 향하라'
+        : combat.isBossEncounterActive()
+          ? '문지기 바르칸을 쓰러뜨려라'
+          : '안개문 너머의 수호자에게 도전하라';
+    } else if (position.z < -54) {
       this.areaName = '잿빛 제단';
-      this.objective = '대성당의 마지막 봉인을 마주하라';
+      this.objective = combat.isBossDefeated()
+        ? '서약의 문 너머로 향하라'
+        : '제단 뒤편 안개문을 넘어라';
     } else if (position.x > 14 && position.z < -18) {
       this.areaName = '종루 회랑';
       this.objective = '회랑의 승강문을 열어 제단으로 향하라';

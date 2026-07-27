@@ -2,17 +2,23 @@ import * as THREE from 'three';
 import type { AudioDirector } from '../audio/AudioDirector';
 import { GAME_CONFIG } from '../config/GameConfig';
 import { AshenHound } from '../enemy/AshenHound';
+import { AshenSentinel } from '../enemy/AshenSentinel';
 import { AshenSpearman } from '../enemy/AshenSpearman';
 import { BellKeeper } from '../enemy/BellKeeper';
 import type { CombatEnemy } from '../enemy/CombatEnemy';
-import { AshenSentinel } from '../enemy/AshenSentinel';
+import {
+  GatewardenVarkan,
+  type BossPresentationEvent,
+} from '../enemy/GatewardenVarkan';
 import { InputController } from '../input/InputController';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { PlayerController } from '../player/PlayerController';
-import type { AttackPulse, LockTargetSnapshot } from './CombatTypes';
+import type { AttackPulse, BossSnapshot, LockTargetSnapshot } from './CombatTypes';
 import { CombatEffects } from './CombatEffects';
 
 export class CombatDirector {
+  private readonly regularEnemies: CombatEnemy[];
+  private readonly boss: GatewardenVarkan;
   private readonly enemies: CombatEnemy[];
   private readonly effects: CombatEffects;
   private readonly playerPosition = new THREE.Vector3();
@@ -25,6 +31,7 @@ export class CombatDirector {
   private hitStop = 0;
   private pendingAshReward = 0;
   private readonly rewardedEnemies = new Set<string>();
+  private bossDefeated = false;
 
   constructor(
     scene: THREE.Scene,
@@ -32,7 +39,7 @@ export class CombatDirector {
     private readonly audio: AudioDirector,
   ) {
     this.effects = new CombatEffects(scene);
-    this.enemies = [
+    this.regularEnemies = [
       new AshenSentinel(scene, physics, 'gate-sentinel', '잿빛 문지기', new THREE.Vector3(0, 1.12, 5.5), audio, 0),
       new AshenHound(scene, physics, 'west-hound', '재를 핥는 사냥개', new THREE.Vector3(-6.8, 0.82, -2.6), audio, 1),
       new AshenSpearman(scene, physics, 'processional-spearman', '서약을 잃은 창병', new THREE.Vector3(6.4, 1.12, -4.8), audio, -1),
@@ -44,6 +51,8 @@ export class CombatDirector {
       new BellKeeper(scene, physics, 'bell-warden', '정예 · 검은 종의 수호자', new THREE.Vector3(23.5, 3.56, -53.8), audio, true),
       new AshenSentinel(scene, physics, 'oathbound-captain', '정예 · 서약대장', new THREE.Vector3(0, 1.62, -72.8), audio, 2),
     ];
+    this.boss = new GatewardenVarkan(scene, physics, new THREE.Vector3(0, 3.2, -105.5), audio);
+    this.enemies = [...this.regularEnemies, this.boss];
   }
 
   handleTargeting(input: InputController, player: PlayerController, cameraForward: THREE.Vector3): void {
@@ -53,7 +62,9 @@ export class CombatDirector {
       return;
     }
     player.getWorldPosition(this.playerPosition);
-    this.lockedEnemy = this.findBestTarget(cameraForward, this.playerPosition);
+    this.lockedEnemy = this.boss.isEncounterActive()
+      ? this.boss
+      : this.findBestTarget(cameraForward, this.playerPosition);
   }
 
   tryExecution(player: PlayerController): boolean {
@@ -74,23 +85,48 @@ export class CombatDirector {
 
   fixedUpdate(delta: number, player: PlayerController): void {
     player.getWorldPosition(this.playerPosition);
+    if (!this.bossDefeated && !this.boss.isEncounterActive()
+      && this.playerPosition.z <= GAME_CONFIG.world.bossTriggerZ
+      && this.playerPosition.y > -2) {
+      this.boss.activateEncounter();
+      for (const enemy of this.regularEnemies) {
+        while (enemy.consumeAttackPulse()) {
+          // Clear attacks committed outside the fog wall before the duel begins.
+        }
+      }
+      this.lockedEnemy = this.boss;
+      this.executingEnemy = null;
+      this.cameraImpulse = Math.max(this.cameraImpulse, 0.22);
+    }
+
     if (player.isDead()) {
       this.lockedEnemy = null;
       this.executingEnemy = null;
-      for (const enemy of this.enemies) enemy.consumeAttackPulse();
+      if (this.boss.isEncounterActive() && !this.bossDefeated) this.boss.abortEncounter();
+      for (const enemy of this.enemies) {
+        while (enemy.consumeAttackPulse()) {
+          // Drain all queued attacks so none survive the death transition.
+        }
+      }
       return;
     }
 
     this.coordinateAttackSlots();
-    for (const enemy of this.enemies) enemy.fixedUpdate(delta, this.playerPosition);
+    const activeEnemies: readonly CombatEnemy[] = this.boss.isEncounterActive()
+      ? [this.boss]
+      : this.regularEnemies;
+    for (const enemy of activeEnemies) enemy.fixedUpdate(delta, this.playerPosition);
 
     const playerPulse = player.consumeAttackPulse();
     if (playerPulse) this.resolvePlayerAttack(playerPulse);
 
-    for (const enemy of this.enemies) {
+    for (const enemy of activeEnemies) {
       if (player.isDead()) break;
-      const pulse = enemy.consumeAttackPulse();
-      if (pulse) this.resolveEnemyAttack(pulse, player, enemy);
+      let pulse = enemy.consumeAttackPulse();
+      while (pulse) {
+        this.resolveEnemyAttack(pulse, player, enemy);
+        pulse = enemy.consumeAttackPulse();
+      }
     }
 
     if (player.consumeExecutionImpact() && this.executingEnemy) {
@@ -108,7 +144,7 @@ export class CombatDirector {
     if (this.lockedEnemy) {
       const snapshot = this.lockedEnemy.getLockSnapshot();
       const distance = snapshot.position.distanceTo(this.playerPosition);
-      if (!snapshot.active || distance > GAME_CONFIG.camera.lockMaxDistance * 1.25) this.lockedEnemy = null;
+      if (!snapshot.active || distance > GAME_CONFIG.camera.lockMaxDistance * 1.4) this.lockedEnemy = null;
     }
   }
 
@@ -119,7 +155,9 @@ export class CombatDirector {
     this.hitStop = 0;
     this.pendingAshReward = 0;
     this.rewardedEnemies.clear();
-    for (const enemy of this.enemies) enemy.reset();
+    this.bossDefeated = false;
+    for (const enemy of this.regularEnemies) enemy.reset();
+    this.boss.resetEncounter();
   }
 
   resetAtRest(): void {
@@ -129,7 +167,9 @@ export class CombatDirector {
     this.hitStop = 0;
     this.pendingAshReward = 0;
     this.rewardedEnemies.clear();
-    for (const enemy of this.enemies) enemy.reset();
+    for (const enemy of this.regularEnemies) enemy.reset();
+    if (!this.bossDefeated) this.boss.resetEncounter();
+    else this.boss.keepDefeated();
   }
 
   consumeAshReward(): number {
@@ -166,6 +206,22 @@ export class CombatDirector {
     };
   }
 
+  getBossSnapshot(): BossSnapshot {
+    return this.boss.getBossSnapshot();
+  }
+
+  consumeBossPresentationEvent(): BossPresentationEvent | null {
+    return this.boss.consumePresentationEvent();
+  }
+
+  isBossEncounterActive(): boolean {
+    return this.boss.isEncounterActive();
+  }
+
+  isBossDefeated(): boolean {
+    return this.bossDefeated;
+  }
+
   consumeHitStop(): number {
     const duration = this.hitStop;
     this.hitStop = 0;
@@ -179,7 +235,13 @@ export class CombatDirector {
   }
 
   private coordinateAttackSlots(): void {
-    const ranked = this.enemies
+    if (this.boss.isEncounterActive()) {
+      this.boss.setAttackAllowed(true);
+      for (const enemy of this.regularEnemies) enemy.setAttackAllowed(false);
+      return;
+    }
+
+    const ranked = this.regularEnemies
       .filter((enemy) => enemy.isActive())
       .map((enemy) => {
         enemy.getPosition(this.enemyPosition);
@@ -256,8 +318,8 @@ export class CombatDirector {
       if (result === 'broken') {
         this.effects.spawnPostureBreak(hitPosition);
         this.audio.postureBreak();
-        this.cameraImpulse = Math.max(this.cameraImpulse, 0.72);
-        this.hitStop = Math.max(this.hitStop, 0.105);
+        this.cameraImpulse = Math.max(this.cameraImpulse, enemy === this.boss ? 1.05 : 0.72);
+        this.hitStop = Math.max(this.hitStop, enemy === this.boss ? 0.14 : 0.105);
         this.lockedEnemy = enemy;
       }
       hitCount += 1;
@@ -269,6 +331,13 @@ export class CombatDirector {
     if (this.rewardedEnemies.has(enemy.id)) return;
     this.rewardedEnemies.add(enemy.id);
     this.pendingAshReward += enemy.ashReward;
+    if (enemy === this.boss) {
+      this.bossDefeated = true;
+      this.lockedEnemy = null;
+      this.executingEnemy = null;
+      this.cameraImpulse = Math.max(this.cameraImpulse, 1.25);
+      this.hitStop = Math.max(this.hitStop, 0.2);
+    }
   }
 
   private resolveEnemyAttack(
@@ -282,29 +351,35 @@ export class CombatDirector {
     const distance = this.toTarget.length();
     if (distance > pulse.range || verticalDifference > GAME_CONFIG.combat.hitHeightTolerance || distance < 0.001) return;
     this.toTarget.multiplyScalar(1 / distance);
-    if (pulse.forward.dot(this.toTarget) < pulse.arcCos) return;
+    if (!pulse.radial && pulse.forward.dot(this.toTarget) < pulse.arcCos) return;
 
-    const result = player.receiveDamage(pulse.damage, pulse.forward, pulse.impact);
+    const result = player.receiveDamage(
+      pulse.damage,
+      pulse.forward,
+      pulse.impact,
+      pulse.guardable ?? true,
+      pulse.parryable ?? true,
+    );
     if (result === 'hit') {
       this.effects.spawnHit(this.playerLockPoint, pulse.weight === 'heavy');
       this.audio.impact(pulse.weight);
-      this.cameraImpulse = Math.max(this.cameraImpulse, pulse.weight === 'heavy' ? 0.68 : 0.44);
-      this.hitStop = Math.max(this.hitStop, pulse.weight === 'heavy' ? 0.075 : 0.048);
+      this.cameraImpulse = Math.max(this.cameraImpulse, pulse.weight === 'heavy' ? 0.78 : 0.44);
+      this.hitStop = Math.max(this.hitStop, pulse.weight === 'heavy' ? 0.085 : 0.048);
     } else if (result === 'guarded') {
       this.effects.spawnGuard(this.playerLockPoint);
       this.audio.guard();
-      this.cameraImpulse = Math.max(this.cameraImpulse, 0.3);
+      this.cameraImpulse = Math.max(this.cameraImpulse, attacker === this.boss ? 0.46 : 0.3);
       this.hitStop = Math.max(this.hitStop, 0.03);
     } else if (result === 'parried') {
       const parryResult = attacker.receiveParry();
       this.effects.spawnParry(pulse.position.clone().addScaledVector(pulse.forward, 0.7));
       this.audio.parry();
-      this.cameraImpulse = Math.max(this.cameraImpulse, parryResult === 'broken' ? 0.82 : 0.6);
+      this.cameraImpulse = Math.max(this.cameraImpulse, parryResult === 'broken' ? 0.92 : 0.6);
       this.hitStop = Math.max(this.hitStop, 0.115);
       if (parryResult === 'broken') this.lockedEnemy = attacker;
     } else {
       this.effects.spawnEvade(this.playerLockPoint.clone().setY(this.playerPosition.y + 0.1));
-      this.cameraImpulse = Math.max(this.cameraImpulse, 0.14);
+      this.cameraImpulse = Math.max(this.cameraImpulse, pulse.weight === 'heavy' ? 0.2 : 0.14);
     }
   }
 }
