@@ -8,7 +8,10 @@ export type KnightVisualState =
   | 'dodge'
   | 'light1'
   | 'light2'
+  | 'light3'
+  | 'heavyCharge'
   | 'heavy'
+  | 'execute'
   | 'guard'
   | 'parry'
   | 'stagger'
@@ -21,6 +24,7 @@ export interface KnightVisualUpdate {
   turnRate: number;
   verticalSpeed: number;
   actionProgress: number;
+  chargeRatio: number;
 }
 
 export class AshenKnightVisual {
@@ -111,6 +115,36 @@ export class AshenKnightVisual {
     belt.position.y = -0.02;
     this.rig.add(belt);
 
+    const gorget = this.mesh(new THREE.TorusGeometry(0.31, 0.065, 7, 18), edge);
+    gorget.rotation.x = Math.PI / 2;
+    gorget.position.set(0, 0.54, -0.01);
+    this.torsoPivot.add(gorget);
+    for (const side of [-1, 1]) {
+      const mantle = this.mesh(new THREE.BoxGeometry(0.42, 0.12, 0.54), blackIron);
+      mantle.position.set(side * 0.36, 0.49, 0.06);
+      mantle.rotation.z = side * 0.09;
+      this.torsoPivot.add(mantle);
+      const knee = this.mesh(new THREE.DodecahedronGeometry(0.16, 0), edge);
+      knee.scale.set(1.05, 0.8, 0.72);
+      knee.position.set(side * 0.21, -0.71, -0.18);
+      this.rig.add(knee);
+    }
+    for (let index = 0; index < 6; index += 1) {
+      const angle = (index / 6) * Math.PI * 2;
+      const plate = this.mesh(new THREE.BoxGeometry(0.2, 0.48, 0.08), index % 2 === 0 ? iron : blackIron);
+      plate.position.set(Math.sin(angle) * 0.31, -0.33, Math.cos(angle) * 0.28);
+      plate.rotation.y = angle;
+      plate.rotation.x = Math.cos(angle) * 0.08;
+      this.rig.add(plate);
+    }
+    const groundShadow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.72, 24),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }),
+    );
+    groundShadow.rotation.x = -Math.PI / 2;
+    groundShadow.position.y = -1.02;
+    this.rig.add(groundShadow);
+
     for (let index = 0; index < 5; index += 1) {
       const panel = this.mesh(new THREE.PlaneGeometry(0.24, 1.18, 1, 4), cloth);
       panel.position.set((index - 2) * 0.18, 0.08, 0.34 + Math.abs(index - 2) * 0.015);
@@ -138,7 +172,7 @@ export class AshenKnightVisual {
     this.sword.add(this.swordTrail);
   }
 
-  update({ delta, state, speedRatio, turnRate, verticalSpeed, actionProgress }: KnightVisualUpdate): void {
+  update({ delta, state, speedRatio, turnRate, verticalSpeed, actionProgress, chargeRatio }: KnightVisualUpdate): void {
     this.time += delta;
     const moving = state === 'walk' || state === 'run';
     if (moving) this.stride += delta * THREE.MathUtils.lerp(6.2, 10.8, speedRatio);
@@ -189,6 +223,28 @@ export class AshenKnightVisual {
       rightArmZ = THREE.MathUtils.lerp(0.9, -0.82, swing);
       swordZ = THREE.MathUtils.lerp(0.72, -1.0, swing);
       trailOpacity = attackTrail(actionProgress, 0.22, 0.58);
+    } else if (state === 'light3') {
+      const thrust = easeAttack(actionProgress, 0.24, 0.56);
+      torsoX = THREE.MathUtils.lerp(-0.12, 0.42, thrust);
+      torsoY = THREE.MathUtils.lerp(-0.32, 0.2, thrust);
+      torsoZ = THREE.MathUtils.lerp(0.12, -0.18, thrust);
+      rightArmX = THREE.MathUtils.lerp(-1.62, -0.18, thrust);
+      rightArmZ = THREE.MathUtils.lerp(0.28, -0.08, thrust);
+      leftArmX = THREE.MathUtils.lerp(-0.72, -0.22, thrust);
+      swordX = THREE.MathUtils.lerp(-0.72, -1.54, thrust);
+      swordZ = THREE.MathUtils.lerp(-0.18, -0.02, thrust);
+      trailOpacity = attackTrail(actionProgress, 0.3, 0.56) * 0.85;
+    } else if (state === 'heavyCharge') {
+      const pulse = Math.sin(this.time * 9) * 0.03 * chargeRatio;
+      torsoX = THREE.MathUtils.lerp(0.02, -0.32, chargeRatio) + pulse;
+      torsoY = THREE.MathUtils.lerp(0, -0.18, chargeRatio);
+      leftArmX = THREE.MathUtils.lerp(-0.18, -1.24, chargeRatio);
+      rightArmX = THREE.MathUtils.lerp(-0.18, -2.42, chargeRatio);
+      rightArmZ = THREE.MathUtils.lerp(0, -0.42, chargeRatio);
+      swordX = THREE.MathUtils.lerp(0.08, -0.5, chargeRatio);
+      swordZ = THREE.MathUtils.lerp(-0.18, -0.52, chargeRatio);
+      leftLegX = 0.18 * chargeRatio;
+      rightLegX = -0.1 * chargeRatio;
     } else if (state === 'heavy') {
       const windup = THREE.MathUtils.smoothstep(actionProgress, 0, 0.42);
       const smash = THREE.MathUtils.smoothstep(actionProgress, 0.43, 0.73);
@@ -216,6 +272,19 @@ export class AshenKnightVisual {
       rightArmZ = THREE.MathUtils.lerp(-0.6, 0.65, snap);
       swordZ = THREE.MathUtils.lerp(-1.05, 0.48, snap);
       trailOpacity = attackTrail(actionProgress, 0.08, 0.34) * 0.55;
+    } else if (state === 'execute') {
+      const close = THREE.MathUtils.smoothstep(actionProgress, 0, 0.32);
+      const drive = THREE.MathUtils.smoothstep(actionProgress, 0.32, 0.58);
+      const withdraw = THREE.MathUtils.smoothstep(actionProgress, 0.7, 1);
+      torsoX = 0.18 + drive * 0.4 - withdraw * 0.22;
+      torsoY = -0.1 + drive * 0.18;
+      rightArmX = THREE.MathUtils.lerp(-1.5, -0.2, drive) + withdraw * 0.45;
+      leftArmX = THREE.MathUtils.lerp(-0.75, -0.28, close);
+      swordX = THREE.MathUtils.lerp(-0.7, -1.5, drive) + withdraw * 0.62;
+      swordZ = -0.12;
+      leftLegX = 0.24;
+      rightLegX = -0.12;
+      trailOpacity = attackTrail(actionProgress, 0.42, 0.6) * 0.45;
     } else if (state === 'stagger') {
       torsoX = -0.34;
       torsoZ = Math.sin(actionProgress * Math.PI) * 0.24;
@@ -258,7 +327,10 @@ export class AshenKnightVisual {
       const panel = this.cloakPanels[index];
       if (!panel) continue;
       const wave = Math.sin(this.time * (2.6 + index * 0.12) + index * 0.7) * 0.035;
-      panel.rotation.x = 0.11 + speedRatio * 0.24 + wave + (state === 'dodge' ? 0.38 : 0);
+      panel.rotation.x = 0.11 + speedRatio * 0.24 + wave
+        + (state === 'dodge' ? 0.38 : 0)
+        + (state === 'heavy' || state === 'execute' ? 0.16 : 0)
+        + (state === 'heavyCharge' ? chargeRatio * 0.08 : 0);
       panel.rotation.z = -turnRate * 0.018 + (index - 2) * 0.012;
     }
   }

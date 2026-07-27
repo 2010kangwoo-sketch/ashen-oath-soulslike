@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { AudioDirector } from '../audio/AudioDirector';
 import { ThirdPersonCamera } from '../camera/ThirdPersonCamera';
 import { CombatDirector } from '../combat/CombatDirector';
 import { GAME_CONFIG } from '../config/GameConfig';
@@ -17,8 +18,10 @@ export class Game {
   private readonly frameMonitor = new FrameMonitor();
   private readonly scene = new THREE.Scene();
   private readonly clock = new THREE.Clock();
+  private readonly audio = new AudioDirector();
   private readonly cameraTarget = new THREE.Vector3();
   private readonly playerVelocity = new THREE.Vector3();
+  private readonly playerPosition = new THREE.Vector3();
   private readonly planarForward = new THREE.Vector3();
   private readonly planarRight = new THREE.Vector3();
   private renderer!: THREE.WebGLRenderer;
@@ -50,8 +53,8 @@ export class Game {
 
     this.reporter.update(73, '잿빛 기사의 무장을 조율하는 중');
     this.input = new InputController(this.canvas);
-    this.player = new PlayerController(this.scene, this.physics);
-    this.combat = new CombatDirector(this.scene, this.physics);
+    this.player = new PlayerController(this.scene, this.physics, this.audio);
+    this.combat = new CombatDirector(this.scene, this.physics, this.audio);
     this.cameraRig = new ThirdPersonCamera(this.camera, this.canvas, this.world.cameraCollisionObjects);
     this.pipeline = new RenderPipeline(this.renderer, this.scene, this.camera);
     this.resizeRenderer();
@@ -84,6 +87,8 @@ export class Game {
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onKeyDown);
     this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+    this.canvas.removeEventListener('pointerdown', this.onAudioUnlock);
+    window.removeEventListener('keydown', this.onAudioUnlock);
   }
 
   private createRenderer(): void {
@@ -140,7 +145,13 @@ export class Game {
     window.addEventListener('resize', this.onResize);
     window.addEventListener('keydown', this.onKeyDown);
     this.canvas.addEventListener('contextmenu', this.onContextMenu);
+    this.canvas.addEventListener('pointerdown', this.onAudioUnlock, { once: true });
+    window.addEventListener('keydown', this.onAudioUnlock, { once: true });
   }
+
+  private readonly onAudioUnlock = (): void => {
+    this.audio.unlock();
+  };
 
   private resizeRenderer(): void {
     const pixelRatio = Math.min(window.devicePixelRatio, GAME_CONFIG.renderer.maxPixelRatio);
@@ -182,6 +193,7 @@ export class Game {
     this.cameraRig.copyPlanarForward(this.planarForward);
     this.cameraRig.copyPlanarRight(this.planarRight);
     this.combat.handleTargeting(this.input, this.player, this.planarForward);
+    this.combat.handleExecution(this.input, this.player);
 
     this.hitStopRemaining = Math.max(0, this.hitStopRemaining - delta);
     if (this.hitStopRemaining <= 0) {
@@ -194,11 +206,15 @@ export class Game {
     }
 
     const presentationDelta = this.hitStopRemaining > 0 ? delta * 0.08 : delta;
+    this.audio.update(delta);
+    while (this.player.consumeFootstep()) this.audio.footstep(this.player.getSprintBlend());
     this.world.update(delta);
     this.player.updateVisual(presentationDelta);
     this.combat.updateVisual(presentationDelta);
     this.player.getCameraTarget(this.cameraTarget);
     this.player.copyVelocity(this.playerVelocity);
+    this.player.getWorldPosition(this.playerPosition);
+    this.world.applyPlayerInfluence(this.playerPosition, this.playerVelocity);
     const lockTarget = this.combat.getLockTargetPosition();
     this.cameraRig.addImpulse(this.combat.consumeCameraImpulse());
     this.cameraRig.update(
@@ -214,6 +230,7 @@ export class Game {
     this.hud.setFps(fps);
     this.hud.setPlayerState(this.player.getMotionState(), this.player.getSpeed(), this.player.isGrounded());
     this.hud.setVitals(this.player.getHealthRatio(), this.player.getStaminaRatio());
+    this.hud.setCharge(this.player.getChargeRatio());
     this.hud.setLockTarget(this.combat.getLockSnapshot(), this.camera);
     this.hud.setDeathState(this.player.isDead());
     this.hud.setPointerLocked(this.cameraRig.isLocked());

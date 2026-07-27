@@ -1,11 +1,11 @@
 export type MoveAxes = Readonly<{ horizontal: number; vertical: number }>;
 export type LookAxes = Readonly<{ horizontal: number; vertical: number }>;
-export type CombatAction = 'lightAttack' | 'heavyAttack' | 'dodge' | 'lockOn' | 'parry';
+export type CombatAction = 'lightAttack' | 'heavyAttack' | 'dodge' | 'lockOn' | 'parry' | 'execute';
 
 const BLOCKED_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-  'ShiftLeft', 'ShiftRight', 'Space', 'KeyQ', 'KeyF',
+  'ShiftLeft', 'ShiftRight', 'Space', 'KeyQ', 'KeyF', 'KeyE',
 ]);
 
 export class InputController {
@@ -17,6 +17,8 @@ export class InputController {
   private running = false;
   private guarding = false;
   private mouseGuarding = false;
+  private mouseHeavyHeld = false;
+  private gamepadHeavyHeld = false;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener('keydown', this.onKeyDown);
@@ -50,9 +52,12 @@ export class InputController {
       this.captureGamepadPress(gamepad, 1, 'dodge');
       this.captureGamepadPress(gamepad, 11, 'lockOn');
       this.captureGamepadPress(gamepad, 6, 'parry');
+      this.captureGamepadPress(gamepad, 0, 'execute');
+      this.gamepadHeavyHeld = Boolean(gamepad.buttons[3]?.pressed);
       gamepadGuard = Boolean(gamepad.buttons[4]?.pressed);
     } else {
       this.previousGamepadButtons.clear();
+      this.gamepadHeavyHeld = false;
       if (document.pointerLockElement !== this.canvas) this.mouseGuarding = false;
     }
 
@@ -66,21 +71,11 @@ export class InputController {
     this.guarding = this.mouseGuarding || gamepadGuard;
   }
 
-  getMoveAxes(): MoveAxes {
-    return this.moveAxes;
-  }
-
-  getLookAxes(): LookAxes {
-    return this.lookAxes;
-  }
-
-  isRunning(): boolean {
-    return this.running;
-  }
-
-  isGuarding(): boolean {
-    return this.guarding;
-  }
+  getMoveAxes(): MoveAxes { return this.moveAxes; }
+  getLookAxes(): LookAxes { return this.lookAxes; }
+  isRunning(): boolean { return this.running; }
+  isGuarding(): boolean { return this.guarding; }
+  isHeavyHeld(): boolean { return this.mouseHeavyHeld || this.gamepadHeavyHeld; }
 
   consumeAction(action: CombatAction): boolean {
     if (!this.pressedActions.has(action)) return false;
@@ -114,6 +109,7 @@ export class InputController {
     if (event.code === 'Space') this.pressedActions.add('dodge');
     if (event.code === 'KeyQ') this.pressedActions.add('lockOn');
     if (event.code === 'KeyF') this.pressedActions.add('parry');
+    if (event.code === 'KeyE') this.pressedActions.add('execute');
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
@@ -124,12 +120,14 @@ export class InputController {
     if (document.pointerLockElement !== this.canvas) return;
     if (event.button === 0) {
       const heavyModifier = this.held.has('ShiftLeft') || this.held.has('ShiftRight');
+      if (heavyModifier) this.mouseHeavyHeld = true;
       this.pressedActions.add(heavyModifier ? 'heavyAttack' : 'lightAttack');
     }
     if (event.button === 2) this.mouseGuarding = true;
   };
 
   private readonly onMouseUp = (event: MouseEvent): void => {
+    if (event.button === 0) this.mouseHeavyHeld = false;
     if (event.button === 2) this.mouseGuarding = false;
   };
 
@@ -141,6 +139,8 @@ export class InputController {
     this.running = false;
     this.guarding = false;
     this.mouseGuarding = false;
+    this.mouseHeavyHeld = false;
+    this.gamepadHeavyHeld = false;
   };
 }
 

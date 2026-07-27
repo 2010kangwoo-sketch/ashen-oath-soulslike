@@ -1,8 +1,14 @@
 import * as THREE from 'three';
-import RAPIER from '@dimforge/rapier3d-compat';
+import RAPIER, { type RigidBody } from '@dimforge/rapier3d-compat';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { AtmosphereSystem } from './AtmosphereSystem';
 import { SurfaceFactory } from './SurfaceFactory';
+
+interface DynamicDebris {
+  readonly mesh: THREE.Mesh;
+  readonly body: RigidBody;
+  cooldown: number;
+}
 
 export class CathedralApproach {
   readonly group = new THREE.Group();
@@ -19,6 +25,9 @@ export class CathedralApproach {
     metalness: 0.72,
   });
   private readonly atmosphere: AtmosphereSystem;
+  private readonly dynamicDebris: DynamicDebris[] = [];
+  private readonly banners: THREE.Mesh[] = [];
+  private elapsed = 0;
 
   constructor(scene: THREE.Scene, private readonly physics: PhysicsWorld) {
     this.group.name = 'cathedral-approach-production-slice';
@@ -33,12 +42,50 @@ export class CathedralApproach {
     this.createCathedralFacade();
     this.createSideRoutes();
     this.createRubbleAndWear();
+    this.createDynamicDebris();
+    this.createBannersAndChains();
     this.createDistantSilhouette();
     this.createLightingAccents();
   }
 
   update(delta: number): void {
+    this.elapsed += delta;
     this.atmosphere.update(delta);
+    for (const banner of this.banners) {
+      const phase = Number(banner.userData.phase ?? 0);
+      banner.rotation.z = Math.sin(this.elapsed * 0.72 + phase) * 0.045;
+      banner.rotation.x = Math.sin(this.elapsed * 1.1 + phase * 0.7) * 0.025;
+    }
+    for (const debris of this.dynamicDebris) {
+      debris.cooldown = Math.max(0, debris.cooldown - delta);
+      const position = debris.body.translation();
+      const rotation = debris.body.rotation();
+      debris.mesh.position.set(position.x, position.y, position.z);
+      debris.mesh.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+      if (position.y < -8) {
+        debris.body.setTranslation({ x: 0, y: 2.6, z: -10 }, true);
+        debris.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        debris.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      }
+    }
+  }
+
+  applyPlayerInfluence(position: THREE.Vector3, velocity: THREE.Vector3): void {
+    const planarSpeed = Math.hypot(velocity.x, velocity.z);
+    if (planarSpeed < 2.2) return;
+    for (const debris of this.dynamicDebris) {
+      if (debris.cooldown > 0) continue;
+      const bodyPosition = debris.body.translation();
+      const dx = bodyPosition.x - position.x;
+      const dz = bodyPosition.z - position.z;
+      const distanceSquared = dx * dx + dz * dz;
+      if (distanceSquared > 1.65 * 1.65 || distanceSquared < 0.001) continue;
+      const inverseDistance = 1 / Math.sqrt(distanceSquared);
+      const force = Math.min(2.8, planarSpeed * 0.34);
+      debris.body.applyImpulse({ x: dx * inverseDistance * force, y: 0.32, z: dz * inverseDistance * force }, true);
+      debris.body.applyTorqueImpulse({ x: dz * 0.1, y: force * 0.16, z: -dx * 0.1 }, true);
+      debris.cooldown = 0.2;
+    }
   }
 
   private createGroundComposition(): void {
@@ -233,6 +280,65 @@ export class CathedralApproach {
       root.rotation.z = (index % 2 ? 1 : -1) * (0.8 + (index % 3) * 0.15);
       root.rotation.y = index * 0.53;
       this.group.add(root);
+    }
+  }
+
+  private createDynamicDebris(): void {
+    const placements: ReadonlyArray<readonly [number, number, number, number]> = [
+      [-2.8, 1.55, 2.3, 0.36], [3.1, 1.52, 1.1, 0.31], [-5.7, 1.38, -5.8, 0.42],
+      [5.8, 1.4, -8.2, 0.34], [-3.7, 1.55, -17.2, 0.46], [4.1, 1.52, -22.4, 0.38],
+      [-7.6, 0.62, 10.4, 0.29], [7.9, 0.62, 13.8, 0.33], [-1.5, 1.52, -28.4, 0.4],
+      [2.2, 1.52, -30.2, 0.32], [-10.6, 0.62, 6.4, 0.37], [10.8, 0.62, 4.2, 0.35],
+    ];
+    placements.forEach(([x, y, z, size], index) => {
+      const geometry = index % 3 === 0
+        ? new THREE.IcosahedronGeometry(size, 0)
+        : new THREE.BoxGeometry(size * 1.5, size * 0.8, size * 1.1);
+      const mesh = new THREE.Mesh(geometry, index % 4 === 0 ? this.paleStone : this.wornStone);
+      mesh.position.set(x, y, z);
+      mesh.rotation.set(index * 0.27, index * 0.61, index * 0.19);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+      const body = this.physics.world.createRigidBody(
+        RAPIER.RigidBodyDesc.dynamic()
+          .setTranslation(x, y, z)
+          .setRotation({ x: mesh.quaternion.x, y: mesh.quaternion.y, z: mesh.quaternion.z, w: mesh.quaternion.w })
+          .setLinearDamping(0.75)
+          .setAngularDamping(0.9),
+      );
+      const collider = index % 3 === 0
+        ? RAPIER.ColliderDesc.ball(size * 0.82)
+        : RAPIER.ColliderDesc.cuboid(size * 0.75, size * 0.4, size * 0.55);
+      this.physics.world.createCollider(collider.setDensity(1.7).setFriction(0.88).setRestitution(0.04), body);
+      this.dynamicDebris.push({ mesh, body, cooldown: 0 });
+    });
+  }
+
+  private createBannersAndChains(): void {
+    const cloth = new THREE.MeshStandardMaterial({ color: 0x231416, roughness: 0.96, side: THREE.DoubleSide });
+    for (const side of [-1, 1]) {
+      for (let index = 0; index < 3; index += 1) {
+        const banner = new THREE.Mesh(new THREE.PlaneGeometry(1.35, 5.2, 2, 8), cloth.clone());
+        banner.position.set(side * 8.7, 6.1, 11 - index * 16.5);
+        banner.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+        banner.rotation.z = side * (0.03 + index * 0.01);
+        banner.castShadow = true;
+        banner.userData.phase = index * 1.7 + side;
+        this.group.add(banner);
+        this.banners.push(banner);
+      }
+    }
+    for (const x of [-3.8, 3.8]) {
+      const chain = new THREE.Group();
+      chain.position.set(x, 10.8, -33.6);
+      for (let index = 0; index < 14; index += 1) {
+        const link = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.025, 5, 10), this.blackIron);
+        link.position.y = -index * 0.29;
+        link.rotation.y = index % 2 === 0 ? 0 : Math.PI / 2;
+        chain.add(link);
+      }
+      this.group.add(chain);
     }
   }
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import RAPIER, { type Collider, type KinematicCharacterController, type RigidBody } from '@dimforge/rapier3d-compat';
+import type { AudioDirector } from '../audio/AudioDirector';
 import { GAME_CONFIG } from '../config/GameConfig';
 import type { AttackPulse, PlayerAttackId } from '../combat/CombatTypes';
 import { InputController } from '../input/InputController';
@@ -8,7 +9,7 @@ import { AshenKnightVisual, type KnightVisualState } from './AshenKnightVisual';
 
 export type PlayerMotionState = KnightVisualState;
 export type DamageResult = 'hit' | 'evaded' | 'guarded' | 'parried';
-type PlayerAction = 'none' | 'dodge' | PlayerAttackId | 'guard' | 'parry' | 'stagger' | 'dead';
+type PlayerAction = 'none' | 'dodge' | PlayerAttackId | 'heavyCharge' | 'execute' | 'guard' | 'parry' | 'stagger' | 'dead';
 
 export class PlayerController {
   readonly visual: THREE.Group;
@@ -39,11 +40,19 @@ export class PlayerController {
   private stamina: number = GAME_CONFIG.player.maxStamina;
   private staminaRegenDelay = 0;
   private queuedLightAttack = false;
+  private chargeRatio = 0;
+  private attackDamageScale = 1;
+  private attackPoiseScale = 1;
+  private executionTarget: THREE.Vector3 | null = null;
+  private executionImpactPending = false;
+  private executionImpactEmitted = false;
+  private footstepDistance = 0;
+  private pendingFootsteps = 0;
   private attackPulseEmitted = false;
   private pendingAttackPulse: AttackPulse | null = null;
   private invulnerable = false;
 
-  constructor(scene: THREE.Scene, physics: PhysicsWorld) {
+  constructor(scene: THREE.Scene, physics: PhysicsWorld, private readonly audio: AudioDirector) {
     this.visual = this.knight.root;
     scene.add(this.visual);
 
@@ -107,6 +116,7 @@ export class PlayerController {
       turnRate: THREE.MathUtils.clamp(this.turnRate, -8, 8),
       verticalSpeed: this.actualVelocity.y,
       actionProgress: this.actionProgress,
+      chargeRatio: this.chargeRatio,
     });
   }
 
@@ -152,6 +162,9 @@ export class PlayerController {
     this.actionProgress = 0;
     this.horizontalVelocity.multiplyScalar(0.18);
     this.queuedLightAttack = false;
+    this.chargeRatio = 0;
+    this.executionTarget = null;
+    this.executionImpactPending = false;
     return 'hit';
   }
 
@@ -181,6 +194,14 @@ export class PlayerController {
     this.sprintBlend = 0;
     this.invulnerable = false;
     this.pendingAttackPulse = null;
+    this.chargeRatio = 0;
+    this.attackDamageScale = 1;
+    this.attackPoiseScale = 1;
+    this.executionTarget = null;
+    this.executionImpactPending = false;
+    this.executionImpactEmitted = false;
+    this.footstepDistance = 0;
+    this.pendingFootsteps = 0;
     this.syncVisual();
   }
 
@@ -231,6 +252,42 @@ export class PlayerController {
     return this.grounded;
   }
 
+  getChargeRatio(): number {
+    return this.action === 'heavyCharge' ? this.chargeRatio : 0;
+  }
+
+  consumeFootstep(): boolean {
+    if (this.pendingFootsteps <= 0) return false;
+    this.pendingFootsteps -= 1;
+    return true;
+  }
+
+  beginExecution(target: THREE.Vector3): boolean {
+    if (this.action !== 'none' && this.action !== 'guard') return false;
+    this.executionTarget = target.clone();
+    const position = this.getWorldPosition(new THREE.Vector3());
+    const direction = this.scratchDirection.copy(target).sub(position).setY(0);
+    if (direction.lengthSq() > 0.001) {
+      direction.normalize();
+      this.facingYaw = Math.atan2(-direction.x, -direction.z);
+      this.forward.copy(direction);
+    }
+    this.action = 'execute';
+    this.actionTimer = 0;
+    this.actionProgress = 0;
+    this.executionImpactPending = false;
+    this.executionImpactEmitted = false;
+    this.horizontalVelocity.set(0, 0, 0);
+    return true;
+  }
+
+  consumeExecutionImpact(): boolean {
+    const pending = this.executionImpactPending;
+    this.executionImpactPending = false;
+    return pending;
+  }
+
+
   isDead(): boolean {
     return this.action === 'dead';
   }
@@ -241,7 +298,24 @@ export class PlayerController {
     const heavyPressed = input.consumeAction('heavyAttack');
     const parryPressed = input.consumeAction('parry');
 
-    if (this.action === 'dead' || this.action === 'stagger') return;
+    if (this.action === 'dead' || this.action === 'stagger' || this.action === 'execute') return;
+
+    if (this.action === 'heavyCharge') {
+      this.chargeRatio = THREE.MathUtils.clamp(
+        this.actionTimer / GAME_CONFIG.player.heavyChargeMax,
+        0,
+        1,
+      );
+      if (dodgePressed && this.canDodge()) {
+        this.chargeRatio = 0;
+        this.startDodge(lockTarget);
+        return;
+      }
+      const fullyCharged = this.actionTimer >= GAME_CONFIG.player.heavyChargeMax;
+      const released = !input.isHeavyHeld() && this.actionTimer >= GAME_CONFIG.player.heavyChargeMin;
+      if (fullyCharged || released) this.releaseHeavyAttack(lockTarget);
+      return;
+    }
 
     if (parryPressed && this.grounded && this.stamina >= GAME_CONFIG.player.parryCost
       && (this.action === 'none' || this.action === 'guard')) {
@@ -256,31 +330,66 @@ export class PlayerController {
 
     if (this.action === 'guard') {
       if (lightPressed) this.startAttack('light1', lockTarget);
-      else if (heavyPressed) this.startAttack('heavy', lockTarget);
+      else if (heavyPressed) this.startHeavyCharge(lockTarget);
       else if (!input.isGuarding()) this.finishAction();
       return;
     }
 
-    if (this.action === 'light1' && lightPressed) {
-      const comboOpen = GAME_CONFIG.combat.attacks.light1.comboOpen;
-      if (this.actionTimer >= comboOpen) this.queuedLightAttack = true;
+    if ((this.action === 'light1' || this.action === 'light2') && lightPressed) {
+      const profile = GAME_CONFIG.combat.attacks[this.action];
+      const bufferOpen = Math.max(0.12, profile.comboOpen - 0.22);
+      if (this.actionTimer >= bufferOpen) this.queuedLightAttack = true;
       return;
     }
 
     if (this.action !== 'none') return;
     if (lightPressed) this.startAttack('light1', lockTarget);
-    else if (heavyPressed) this.startAttack('heavy', lockTarget);
+    else if (heavyPressed) this.startHeavyCharge(lockTarget);
     else if (input.isGuarding() && this.grounded) this.startGuard();
   }
 
   private canDodge(): boolean {
     if (!this.grounded || this.stamina < GAME_CONFIG.player.dodgeCost) return false;
     if (this.action === 'none' || this.action === 'guard') return true;
-    if (this.action === 'light1' || this.action === 'light2' || this.action === 'heavy') {
+    if (this.action === 'light1' || this.action === 'light2' || this.action === 'light3' || this.action === 'heavy') {
       const profile = GAME_CONFIG.combat.attacks[this.action];
       return this.actionTimer > profile.activeEnd + 0.09;
     }
+    if (this.action === 'heavyCharge') return this.actionTimer >= 0.08;
     return false;
+  }
+
+  private startHeavyCharge(lockTarget: THREE.Vector3 | null): void {
+    if (!this.grounded || this.stamina < GAME_CONFIG.player.heavyChargeStaminaBase) return;
+    this.action = 'heavyCharge';
+    this.actionTimer = 0;
+    this.actionProgress = 0;
+    this.chargeRatio = 0;
+    this.queuedLightAttack = false;
+    this.attackPulseEmitted = false;
+    this.alignAttackFacing(lockTarget);
+    this.horizontalVelocity.multiplyScalar(0.1);
+  }
+
+  private releaseHeavyAttack(lockTarget: THREE.Vector3 | null): void {
+    const charge = THREE.MathUtils.clamp(this.chargeRatio, 0, 1);
+    const cost = GAME_CONFIG.player.heavyChargeStaminaBase
+      + GAME_CONFIG.player.heavyChargeStaminaBonus * charge;
+    if (this.stamina < cost) {
+      this.chargeRatio = 0;
+      this.finishAction();
+      return;
+    }
+    this.spendStamina(cost);
+    this.attackDamageScale = THREE.MathUtils.lerp(1, 1.7, charge);
+    this.attackPoiseScale = THREE.MathUtils.lerp(1, 1.95, charge);
+    this.action = 'heavy';
+    this.actionTimer = 0;
+    this.actionProgress = 0;
+    this.attackPulseEmitted = false;
+    this.alignAttackFacing(lockTarget);
+    this.horizontalVelocity.multiplyScalar(0.08);
+    this.audio.swing('heavy');
   }
 
   private startGuard(): void {
@@ -297,6 +406,7 @@ export class PlayerController {
     this.actionProgress = 0;
     this.horizontalVelocity.multiplyScalar(0.1);
     this.queuedLightAttack = false;
+    this.audio.swing('light');
   }
 
   private startDodge(lockTarget: THREE.Vector3 | null): void {
@@ -319,17 +429,27 @@ export class PlayerController {
     const targetYaw = Math.atan2(-this.dodgeDirection.x, -this.dodgeDirection.z);
     this.facingYaw = targetYaw;
     this.horizontalVelocity.set(0, 0, 0);
+    this.audio.dodge();
   }
 
   private startAttack(attack: PlayerAttackId, lockTarget: THREE.Vector3 | null): void {
     const profile = GAME_CONFIG.combat.attacks[attack];
     if (this.stamina < profile.staminaCost) return;
     this.spendStamina(profile.staminaCost);
+    this.attackDamageScale = 1;
+    this.attackPoiseScale = 1;
+    this.chargeRatio = 0;
     this.action = attack;
     this.actionTimer = 0;
     this.actionProgress = 0;
     this.attackPulseEmitted = false;
     if (attack !== 'light1') this.queuedLightAttack = false;
+    this.alignAttackFacing(lockTarget);
+    this.horizontalVelocity.multiplyScalar(0.12);
+    this.audio.swing(attack === 'light3' ? 'medium' : 'light');
+  }
+
+  private alignAttackFacing(lockTarget: THREE.Vector3 | null): void {
     if (lockTarget) {
       const position = this.getWorldPosition(new THREE.Vector3());
       const direction = this.scratchDirection.copy(lockTarget).sub(position).setY(0);
@@ -338,7 +458,6 @@ export class PlayerController {
       this.facingYaw = Math.atan2(-this.desiredDirection.x, -this.desiredDirection.z);
     }
     this.forward.set(-Math.sin(this.facingYaw), 0, -Math.cos(this.facingYaw));
-    this.horizontalVelocity.multiplyScalar(0.12);
   }
 
   private computePlanarMovement(
@@ -354,13 +473,32 @@ export class PlayerController {
       return this.horizontalVelocity.copy(this.dodgeDirection).multiplyScalar(shapedSpeed);
     }
 
-    if (this.action === 'light1' || this.action === 'light2' || this.action === 'heavy') {
+    if (this.action === 'light1' || this.action === 'light2' || this.action === 'light3' || this.action === 'heavy') {
       const profile = GAME_CONFIG.combat.attacks[this.action];
       const progress = THREE.MathUtils.clamp(this.actionTimer / profile.duration, 0, 1);
       const rootWindow = Math.sin(Math.min(1, progress / 0.72) * Math.PI);
       return this.horizontalVelocity.copy(this.forward).multiplyScalar(
         (profile.rootDistance / profile.duration) * Math.max(0, rootWindow) * 1.55,
       );
+    }
+
+    if (this.action === 'heavyCharge') {
+      const target = this.scratchDirection.copy(this.desiredDirection).multiplyScalar(
+        inputMagnitude > 0.04 ? 0.55 * inputMagnitude : 0,
+      );
+      this.horizontalVelocity.lerp(target, 1 - Math.exp(-20 * delta));
+      return this.horizontalVelocity;
+    }
+
+    if (this.action === 'execute') {
+      if (this.executionTarget) {
+        const position = this.getWorldPosition(new THREE.Vector3());
+        const distance = this.scratchDirection.copy(this.executionTarget).sub(position).setY(0).length();
+        const forwardSpeed = distance > 1.35 && this.actionTimer < 0.45 ? Math.min(2.8, distance * 2.1) : 0;
+        return this.horizontalVelocity.copy(this.forward).multiplyScalar(forwardSpeed);
+      }
+      this.horizontalVelocity.set(0, 0, 0);
+      return this.horizontalVelocity;
     }
 
     if (this.action === 'guard') {
@@ -443,19 +581,38 @@ export class PlayerController {
     if (this.grounded && this.verticalVelocity < 0) this.verticalVelocity = GAME_CONFIG.player.groundedPull;
     this.actualVelocity.set(corrected.x / delta, corrected.y / delta, corrected.z / delta);
     this.actualSpeed = Math.hypot(this.actualVelocity.x, this.actualVelocity.z);
+    if (this.grounded && this.action === 'none' && this.actualSpeed > 0.65) {
+      this.footstepDistance += Math.hypot(corrected.x, corrected.z);
+      const strideDistance = this.actualSpeed > GAME_CONFIG.player.walkSpeed * 1.15 ? 1.55 : 1.18;
+      while (this.footstepDistance >= strideDistance) {
+        this.footstepDistance -= strideDistance;
+        this.pendingFootsteps += 1;
+      }
+    } else if (!this.grounded || this.actualSpeed < 0.2) {
+      this.footstepDistance = Math.min(this.footstepDistance, 0.4);
+    }
   }
 
   private updateFacing(delta: number, hasInput: boolean, lockTarget: THREE.Vector3 | null): void {
     const previousYaw = this.facingYaw;
-    if (this.action === 'none' || this.action === 'guard' || this.action === 'parry') {
+    const currentAction = this.action;
+    const attackAction = isPlayerAttack(currentAction);
+    const attackProfile = attackAction ? GAME_CONFIG.combat.attacks[currentAction] : null;
+    const trackingOpen = attackProfile !== null && this.actionTimer < attackProfile.activeStart * 0.82;
+    const canTrack = this.action === 'none' || this.action === 'guard' || this.action === 'parry'
+      || this.action === 'heavyCharge' || this.action === 'execute' || trackingOpen;
+    if (canTrack) {
       let targetYaw: number | null = null;
       let turnSpeed: number = GAME_CONFIG.player.turnSpeedWalk;
-      if (lockTarget) {
+      const trackingTarget = this.action === 'execute' ? this.executionTarget : lockTarget;
+      if (trackingTarget) {
         const position = this.getWorldPosition(new THREE.Vector3());
-        const direction = this.scratchDirection.copy(lockTarget).sub(position).setY(0);
+        const direction = this.scratchDirection.copy(trackingTarget).sub(position).setY(0);
         if (direction.lengthSq() > 0.001) targetYaw = Math.atan2(-direction.x, -direction.z);
-        turnSpeed = GAME_CONFIG.player.lockTurnSpeed;
-      } else if (hasInput) {
+        turnSpeed = attackAction
+          ? THREE.MathUtils.degToRad(GAME_CONFIG.combat.attackTrackingDegrees) / 0.24
+          : GAME_CONFIG.player.lockTurnSpeed;
+      } else if (hasInput && (this.action === 'none' || this.action === 'guard' || this.action === 'heavyCharge')) {
         targetYaw = Math.atan2(-this.desiredDirection.x, -this.desiredDirection.z);
         turnSpeed = this.actualSpeed > GAME_CONFIG.player.walkSpeed * 1.1
           ? GAME_CONFIG.player.turnSpeedRun
@@ -470,6 +627,26 @@ export class PlayerController {
   private updateActionTimeline(previousTimer: number, lockTarget: THREE.Vector3 | null): void {
     if (this.action === 'none') {
       this.actionProgress = 0;
+      return;
+    }
+    if (this.action === 'heavyCharge') {
+      this.chargeRatio = THREE.MathUtils.clamp(this.actionTimer / GAME_CONFIG.player.heavyChargeMax, 0, 1);
+      this.actionProgress = this.chargeRatio;
+      return;
+    }
+    if (this.action === 'execute') {
+      this.actionProgress = THREE.MathUtils.clamp(
+        this.actionTimer / GAME_CONFIG.player.executionDuration,
+        0,
+        1,
+      );
+      if (!this.executionImpactEmitted
+        && previousTimer < GAME_CONFIG.player.executionImpactTime
+        && this.actionTimer >= GAME_CONFIG.player.executionImpactTime) {
+        this.executionImpactPending = true;
+        this.executionImpactEmitted = true;
+      }
+      if (this.actionTimer >= GAME_CONFIG.player.executionDuration) this.finishAction();
       return;
     }
     if (this.action === 'dodge') {
@@ -501,15 +678,17 @@ export class PlayerController {
     this.actionProgress = THREE.MathUtils.clamp(this.actionTimer / profile.duration, 0, 1);
     if (!this.attackPulseEmitted && previousTimer < profile.activeStart && this.actionTimer >= profile.activeStart) {
       const position = this.getLockPoint(new THREE.Vector3()).addScaledVector(this.forward, 0.45);
+      const weight = attack === 'heavy' ? 'heavy' : attack === 'light3' ? 'medium' : 'light';
       this.pendingAttackPulse = {
         source: 'player',
         position,
         forward: this.forward.clone(),
         range: profile.range,
         arcCos: profile.arcCos,
-        damage: profile.damage,
-        poiseDamage: profile.poiseDamage,
-        impact: attack === 'heavy' ? 2.6 : 1.45,
+        damage: profile.damage * this.attackDamageScale,
+        poiseDamage: profile.poiseDamage * this.attackPoiseScale,
+        impact: attack === 'heavy' ? 2.8 + this.chargeRatio * 0.7 : attack === 'light3' ? 2.15 : 1.45,
+        weight,
       };
       this.attackPulseEmitted = true;
     }
@@ -517,6 +696,9 @@ export class PlayerController {
       if (attack === 'light1' && this.queuedLightAttack) {
         this.queuedLightAttack = false;
         this.startAttack('light2', lockTarget);
+      } else if (attack === 'light2' && this.queuedLightAttack) {
+        this.queuedLightAttack = false;
+        this.startAttack('light3', lockTarget);
       } else {
         this.finishAction();
       }
@@ -524,9 +706,10 @@ export class PlayerController {
   }
 
   private updateInvulnerability(): void {
-    this.invulnerable = this.action === 'dodge'
-      && this.actionTimer >= GAME_CONFIG.player.dodgeInvulnerableStart
-      && this.actionTimer <= GAME_CONFIG.player.dodgeInvulnerableEnd;
+    this.invulnerable = this.action === 'execute'
+      || (this.action === 'dodge'
+        && this.actionTimer >= GAME_CONFIG.player.dodgeInvulnerableStart
+        && this.actionTimer <= GAME_CONFIG.player.dodgeInvulnerableEnd);
   }
 
   private finishAction(): void {
@@ -535,6 +718,10 @@ export class PlayerController {
     this.actionProgress = 0;
     this.attackPulseEmitted = false;
     this.invulnerable = false;
+    this.chargeRatio = 0;
+    this.attackDamageScale = 1;
+    this.attackPoiseScale = 1;
+    this.executionTarget = null;
   }
 
   private updateMotionState(runRequested: boolean): void {
@@ -556,7 +743,8 @@ export class PlayerController {
   private updateResourceTimers(delta: number): void {
     this.staminaRegenDelay = Math.max(0, this.staminaRegenDelay - delta);
     if (this.staminaRegenDelay <= 0 && this.action !== 'dodge' && this.action !== 'guard'
-      && this.action !== 'parry' && this.action !== 'dead') {
+      && this.action !== 'parry' && this.action !== 'heavyCharge'
+      && this.action !== 'execute' && this.action !== 'dead') {
       this.stamina = Math.min(
         GAME_CONFIG.player.maxStamina,
         this.stamina + GAME_CONFIG.player.staminaRegenPerSecond * delta,
@@ -589,4 +777,8 @@ function shortestAngle(angle: number): number {
 function moveAngleTowards(current: number, target: number, maxDelta: number): number {
   const delta = shortestAngle(target - current);
   return current + THREE.MathUtils.clamp(delta, -maxDelta, maxDelta);
+}
+
+function isPlayerAttack(action: PlayerAction): action is PlayerAttackId {
+  return action === 'light1' || action === 'light2' || action === 'light3' || action === 'heavy';
 }

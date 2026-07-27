@@ -63,6 +63,32 @@ export class CombatEffects {
     this.rings.push({ mesh: ring, life: 0.22, maxLife: 0.22 });
   }
 
+  spawnGuard(position: THREE.Vector3): void {
+    const ring = this.makeRing(position, 0xb9c2c5, 0.95, 0.2);
+    ring.rotation.set(0, 0, Math.PI / 2);
+  }
+
+  spawnParry(position: THREE.Vector3): void {
+    this.spawnHit(position, true);
+    const ring = this.makeRing(position, 0xf5e4b5, 1.8, 0.34);
+    ring.rotation.set(Math.PI / 2, 0, 0);
+  }
+
+  spawnPostureBreak(position: THREE.Vector3): void {
+    for (let index = 0; index < 3; index += 1) {
+      const ring = this.makeRing(position, 0xd36b3c, 1.1 + index * 0.5, 0.42 + index * 0.05);
+      ring.rotation.set(index * 0.7, index * 0.9, index * 0.4);
+    }
+  }
+
+  spawnExecution(position: THREE.Vector3): void {
+    this.spawnHit(position, true);
+    for (let index = 0; index < 4; index += 1) {
+      const ring = this.makeRing(position, index % 2 === 0 ? 0xe4c18b : 0x9d2f20, 1.5 + index * 0.55, 0.5);
+      ring.rotation.set(index * 0.52, index * 0.74, index * 0.31);
+    }
+  }
+
   spawnEvade(position: THREE.Vector3): void {
     const ring = new THREE.Mesh(this.ringGeometry, this.ringMaterial.clone());
     (ring.material as THREE.MeshBasicMaterial).color.setHex(0x8ea7b3);
@@ -72,6 +98,23 @@ export class CombatEffects {
     ring.scale.setScalar(0.7);
     this.group.add(ring);
     this.rings.push({ mesh: ring, life: 0.32, maxLife: 0.32 });
+  }
+
+  private makeRing(
+    position: THREE.Vector3,
+    color: number,
+    scale: number,
+    life: number,
+  ): THREE.Mesh {
+    const material = this.ringMaterial.clone();
+    material.color.setHex(color);
+    material.opacity = 0.86;
+    const ring = new THREE.Mesh(this.ringGeometry, material);
+    ring.position.copy(position);
+    ring.scale.setScalar(scale);
+    this.group.add(ring);
+    this.rings.push({ mesh: ring, life, maxLife: life });
+    return ring;
   }
 
   update(delta: number): void {
