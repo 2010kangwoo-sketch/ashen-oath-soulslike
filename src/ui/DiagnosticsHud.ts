@@ -1,9 +1,14 @@
+import type { PlayerMotionState } from '../player/PlayerController';
+
 export class DiagnosticsHud {
   private readonly root: HTMLElement;
   private readonly help: HTMLElement;
   private readonly renderStatus: HTMLElement;
   private readonly physicsStatus: HTMLElement;
   private readonly fpsStatus: HTMLElement;
+  private readonly movementStatus: HTMLElement;
+  private readonly speedStatus: HTMLElement;
+  private readonly groundedStatus: HTMLElement;
 
   constructor() {
     this.root = this.requireElement('hud');
@@ -11,6 +16,9 @@ export class DiagnosticsHud {
     this.renderStatus = this.requireElement('render-status');
     this.physicsStatus = this.requireElement('physics-status');
     this.fpsStatus = this.requireElement('fps-status');
+    this.movementStatus = this.requireElement('movement-status');
+    this.speedStatus = this.requireElement('speed-status');
+    this.groundedStatus = this.requireElement('grounded-status');
   }
 
   reveal(): void {
@@ -27,6 +35,12 @@ export class DiagnosticsHud {
 
   setFps(fps: number): void {
     if (fps > 0) this.fpsStatus.textContent = `${fps} FPS`;
+  }
+
+  setPlayerState(state: PlayerMotionState, speed: number, grounded: boolean): void {
+    this.movementStatus.textContent = state;
+    this.speedStatus.textContent = `${speed.toFixed(1)} m/s`;
+    this.groundedStatus.textContent = grounded ? '접지' : '공중';
   }
 
   toggleHelp(): void {

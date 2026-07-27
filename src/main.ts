@@ -11,7 +11,7 @@ void game.start().catch((error: unknown) => {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   const fatal = document.getElementById('fatal-error');
   fatal?.classList.remove('is-hidden');
-  if (fatal) fatal.textContent = `기반 빌드를 시작하지 못했습니다.\n${message}`;
+  if (fatal) fatal.textContent = `Pass 1 이동 빌드를 시작하지 못했습니다.\n${message}`;
 });
 
 window.addEventListener('beforeunload', () => game.dispose(), { once: true });

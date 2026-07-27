@@ -1,0 +1,25 @@
+{
+  "pass": 1,
+  "scope": "third-person movement foundation",
+  "checks": {
+    "typescriptSyntax": "passed",
+    "strictProjectStructure": "passed with local module declarations",
+    "geometryInvariants": "passed",
+    "gitDiffWhitespace": "passed",
+    "productionBuild": "delegated to GitHub Actions after bundle push"
+  },
+  "geometry": {
+    "capsuleSpawnGapMeters": 0.06,
+    "stairRiseMeters": 0.28,
+    "autoStepHeightMeters": 0.42,
+    "lastStairTopMeters": 2.52,
+    "upperPlatformTopMeters": 2.52,
+    "maxClimbAngleDegrees": 48,
+    "blockedSlopeDegrees": 58
+  },
+  "knownLimitations": [
+    "Procedural placeholder character instead of final animation asset",
+    "No dodge, stamina, attacks, enemies, or lock-on until later passes",
+    "Full Vite production build could not run in the authoring container because its npm gateway returned HTTP 503"
+  ]
+}
