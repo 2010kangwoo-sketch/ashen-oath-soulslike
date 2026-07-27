@@ -1,3 +1,5 @@
+import type { Camera } from 'three';
+import type { LockTargetSnapshot } from '../combat/CombatTypes';
 import type { PlayerMotionState } from '../player/PlayerController';
 
 export class GameHud {
@@ -9,6 +11,13 @@ export class GameHud {
   private readonly speedStatus: HTMLElement;
   private readonly groundedStatus: HTMLElement;
   private readonly pointerHint: HTMLElement;
+  private readonly healthFill: HTMLElement;
+  private readonly staminaFill: HTMLElement;
+  private readonly lockPanel: HTMLElement;
+  private readonly lockName: HTMLElement;
+  private readonly lockHealthFill: HTMLElement;
+  private readonly lockReticle: HTMLElement;
+  private readonly deathPanel: HTMLElement;
   private debugVisible = false;
 
   constructor() {
@@ -20,6 +29,13 @@ export class GameHud {
     this.speedStatus = this.requireElement('speed-status');
     this.groundedStatus = this.requireElement('grounded-status');
     this.pointerHint = this.requireElement('pointer-hint');
+    this.healthFill = this.requireElement('health-fill');
+    this.staminaFill = this.requireElement('stamina-fill');
+    this.lockPanel = this.requireElement('lock-target-panel');
+    this.lockName = this.requireElement('lock-target-name');
+    this.lockHealthFill = this.requireElement('lock-target-health-fill');
+    this.lockReticle = this.requireElement('lock-reticle');
+    this.deathPanel = this.requireElement('death-panel');
   }
 
   reveal(): void {
@@ -37,10 +53,42 @@ export class GameHud {
       walk: '걷기',
       run: '질주',
       airborne: '낙하',
+      dodge: '회피',
+      light1: '약공격 1',
+      light2: '약공격 2',
+      heavy: '강공격',
+      guard: '방어',
+      parry: '패링',
+      stagger: '경직',
+      dead: '쓰러짐',
     };
     this.movementStatus.textContent = labels[state];
     this.speedStatus.textContent = `${speed.toFixed(1)} m/s`;
     this.groundedStatus.textContent = grounded ? '접지' : '공중';
+  }
+
+  setVitals(healthRatio: number, staminaRatio: number): void {
+    this.healthFill.style.transform = `scaleX(${clamp01(healthRatio)})`;
+    this.staminaFill.style.transform = `scaleX(${clamp01(staminaRatio)})`;
+    this.healthFill.parentElement?.classList.toggle('critical', healthRatio <= 0.25);
+  }
+
+  setLockTarget(snapshot: LockTargetSnapshot | null, camera: Camera): void {
+    const projected = snapshot?.position.clone().project(camera);
+    const visible = (snapshot?.active ?? false) && Boolean(projected && projected.z < 1);
+    this.lockPanel.classList.toggle('is-hidden', !visible);
+    this.lockReticle.classList.toggle('is-hidden', !visible);
+    if (!snapshot) return;
+    this.lockName.textContent = snapshot.name;
+    this.lockHealthFill.style.transform = `scaleX(${clamp01(snapshot.healthRatio)})`;
+    if (projected) {
+      this.lockReticle.style.left = `${(projected.x * 0.5 + 0.5) * 100}%`;
+      this.lockReticle.style.top = `${(-projected.y * 0.5 + 0.5) * 100}%`;
+    }
+  }
+
+  setDeathState(dead: boolean): void {
+    this.deathPanel.classList.toggle('is-hidden', !dead);
   }
 
   setPointerLocked(locked: boolean): void {
@@ -61,4 +109,8 @@ export class GameHud {
     if (!element) throw new Error(`Required UI element is missing: #${id}`);
     return element;
   }
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
 }

@@ -1,13 +1,26 @@
 import * as THREE from 'three';
 
-export type LocomotionVisualState = 'idle' | 'walk' | 'run' | 'airborne';
+export type KnightVisualState =
+  | 'idle'
+  | 'walk'
+  | 'run'
+  | 'airborne'
+  | 'dodge'
+  | 'light1'
+  | 'light2'
+  | 'heavy'
+  | 'guard'
+  | 'parry'
+  | 'stagger'
+  | 'dead';
 
 export interface KnightVisualUpdate {
   delta: number;
-  state: LocomotionVisualState;
+  state: KnightVisualState;
   speedRatio: number;
   turnRate: number;
   verticalSpeed: number;
+  actionProgress: number;
 }
 
 export class AshenKnightVisual {
@@ -22,11 +35,12 @@ export class AshenKnightVisual {
   private readonly rightLeg = new THREE.Group();
   private readonly cloakPanels: THREE.Mesh[] = [];
   private readonly sword: THREE.Group;
+  private readonly swordTrail: THREE.Mesh;
   private time = 0;
   private stride = 0;
 
   constructor() {
-    this.root.name = 'ashen-knight-final-style-rig';
+    this.root.name = 'ashen-knight-production-rig';
     this.root.add(this.rig);
 
     const iron = new THREE.MeshStandardMaterial({ color: 0x34383a, roughness: 0.48, metalness: 0.72 });
@@ -109,9 +123,22 @@ export class AshenKnightVisual {
     this.sword.position.set(0.62, 0.1, 0.12);
     this.sword.rotation.set(0.08, 0, -0.18);
     this.rig.add(this.sword);
+
+    const trailMaterial = new THREE.MeshBasicMaterial({
+      color: 0xd7bd8d,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+    });
+    this.swordTrail = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 1.85), trailMaterial);
+    this.swordTrail.position.set(0, -0.43, 0.07);
+    this.swordTrail.rotation.y = Math.PI / 2;
+    this.sword.add(this.swordTrail);
   }
 
-  update({ delta, state, speedRatio, turnRate, verticalSpeed }: KnightVisualUpdate): void {
+  update({ delta, state, speedRatio, turnRate, verticalSpeed, actionProgress }: KnightVisualUpdate): void {
     this.time += delta;
     const moving = state === 'walk' || state === 'run';
     if (moving) this.stride += delta * THREE.MathUtils.lerp(6.2, 10.8, speedRatio);
@@ -119,27 +146,119 @@ export class AshenKnightVisual {
     const strideSin = Math.sin(this.stride);
     const strideCos = Math.cos(this.stride);
     const strideAmount = moving ? THREE.MathUtils.lerp(0.18, 0.58, speedRatio) : 0;
-    const settle = 1 - Math.exp(-12 * delta);
+    const settle = 1 - Math.exp(-15 * delta);
 
-    this.leftLeg.rotation.x = THREE.MathUtils.lerp(this.leftLeg.rotation.x, strideSin * strideAmount, settle);
-    this.rightLeg.rotation.x = THREE.MathUtils.lerp(this.rightLeg.rotation.x, -strideSin * strideAmount, settle);
-    this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, -strideSin * strideAmount * 0.55, settle);
-    this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, strideSin * strideAmount * 0.35, settle);
+    let leftLegX = strideSin * strideAmount;
+    let rightLegX = -strideSin * strideAmount;
+    let leftArmX = -strideSin * strideAmount * 0.55;
+    let rightArmX = strideSin * strideAmount * 0.35;
+    let leftArmZ = 0;
+    let rightArmZ = 0;
+    let torsoX = state === 'run' ? 0.09 : 0.015;
+    let torsoY = 0;
+    let torsoZ = -turnRate * 0.05;
+    let swordX = 0.08;
+    let swordY = 0;
+    let swordZ = -0.18 - speedRatio * 0.06 + strideSin * 0.015;
+    let trailOpacity = 0;
+
+    if (state === 'dodge') {
+      const roll = actionProgress * Math.PI * 2;
+      torsoX = 0.58 + Math.sin(actionProgress * Math.PI) * 0.42;
+      torsoZ = Math.sin(roll) * 0.08;
+      leftLegX = 0.62;
+      rightLegX = 0.38;
+      leftArmX = -0.45;
+      rightArmX = -0.6;
+      swordZ = -0.55;
+    } else if (state === 'light1') {
+      const swing = easeAttack(actionProgress, 0.2, 0.58);
+      torsoY = THREE.MathUtils.lerp(-0.72, 0.82, swing);
+      torsoX = 0.14;
+      torsoZ = THREE.MathUtils.lerp(0.22, -0.25, swing);
+      rightArmX = THREE.MathUtils.lerp(-1.85, 0.68, swing);
+      rightArmZ = THREE.MathUtils.lerp(-0.55, 0.78, swing);
+      swordZ = THREE.MathUtils.lerp(-1.15, 0.62, swing);
+      trailOpacity = attackTrail(actionProgress, 0.2, 0.55);
+    } else if (state === 'light2') {
+      const swing = easeAttack(actionProgress, 0.22, 0.62);
+      torsoY = THREE.MathUtils.lerp(0.82, -0.92, swing);
+      torsoX = 0.18;
+      torsoZ = THREE.MathUtils.lerp(-0.3, 0.3, swing);
+      rightArmX = THREE.MathUtils.lerp(-1.35, 0.48, swing);
+      rightArmZ = THREE.MathUtils.lerp(0.9, -0.82, swing);
+      swordZ = THREE.MathUtils.lerp(0.72, -1.0, swing);
+      trailOpacity = attackTrail(actionProgress, 0.22, 0.58);
+    } else if (state === 'heavy') {
+      const windup = THREE.MathUtils.smoothstep(actionProgress, 0, 0.42);
+      const smash = THREE.MathUtils.smoothstep(actionProgress, 0.43, 0.73);
+      torsoX = THREE.MathUtils.lerp(-0.22, 0.48, smash);
+      torsoZ = -0.12 * windup;
+      rightArmX = THREE.MathUtils.lerp(-2.65, 0.86, smash);
+      leftArmX = THREE.MathUtils.lerp(-1.3, 0.35, smash);
+      swordX = THREE.MathUtils.lerp(-0.45, 0.45, smash);
+      swordZ = THREE.MathUtils.lerp(-0.25, 0.1, smash);
+      trailOpacity = attackTrail(actionProgress, 0.45, 0.72) * 1.25;
+    } else if (state === 'guard') {
+      torsoX = 0.08;
+      torsoY = -0.12;
+      leftArmX = -0.95;
+      rightArmX = -0.72;
+      leftArmZ = -0.52;
+      rightArmZ = 0.28;
+      swordZ = -0.62;
+    } else if (state === 'parry') {
+      const snap = THREE.MathUtils.smoothstep(actionProgress, 0.08, 0.38);
+      torsoY = THREE.MathUtils.lerp(-0.42, 0.38, snap);
+      torsoX = 0.12;
+      leftArmX = THREE.MathUtils.lerp(-1.2, -0.35, snap);
+      rightArmX = THREE.MathUtils.lerp(-1.55, 0.1, snap);
+      rightArmZ = THREE.MathUtils.lerp(-0.6, 0.65, snap);
+      swordZ = THREE.MathUtils.lerp(-1.05, 0.48, snap);
+      trailOpacity = attackTrail(actionProgress, 0.08, 0.34) * 0.55;
+    } else if (state === 'stagger') {
+      torsoX = -0.34;
+      torsoZ = Math.sin(actionProgress * Math.PI) * 0.24;
+      leftArmX = 0.48;
+      rightArmX = 0.7;
+      swordZ = -0.78;
+    } else if (state === 'dead') {
+      torsoX = 1.22;
+      torsoZ = 0.22;
+      leftLegX = 0.3;
+      rightLegX = -0.3;
+      swordZ = -1.15;
+    }
+
+    this.leftLeg.rotation.x = THREE.MathUtils.lerp(this.leftLeg.rotation.x, leftLegX, settle);
+    this.rightLeg.rotation.x = THREE.MathUtils.lerp(this.rightLeg.rotation.x, rightLegX, settle);
+    this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, leftArmX, settle);
+    this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, rightArmX, settle);
+    this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, leftArmZ, settle);
+    this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, rightArmZ, settle);
 
     const idleBreath = state === 'idle' ? Math.sin(this.time * 1.7) * 0.012 : 0;
     const footBob = moving ? Math.abs(strideCos) * 0.026 * speedRatio : 0;
     this.rig.position.y = AshenKnightVisual.RIG_BASE_HEIGHT + idleBreath + footBob
       + (state === 'airborne' ? THREE.MathUtils.clamp(verticalSpeed * 0.006, -0.08, 0.05) : 0);
-    this.torsoPivot.rotation.z = THREE.MathUtils.lerp(this.torsoPivot.rotation.z, -turnRate * 0.05, settle);
-    this.torsoPivot.rotation.x = THREE.MathUtils.lerp(this.torsoPivot.rotation.x, state === 'run' ? 0.09 : 0.015, settle);
+    this.rig.rotation.x = THREE.MathUtils.lerp(this.rig.rotation.x, state === 'dead' ? -0.2 : 0, settle);
+    this.torsoPivot.rotation.x = THREE.MathUtils.lerp(this.torsoPivot.rotation.x, torsoX, settle);
+    this.torsoPivot.rotation.y = THREE.MathUtils.lerp(this.torsoPivot.rotation.y, torsoY, settle);
+    this.torsoPivot.rotation.z = THREE.MathUtils.lerp(this.torsoPivot.rotation.z, torsoZ, settle);
     this.headPivot.rotation.y = THREE.MathUtils.lerp(this.headPivot.rotation.y, turnRate * 0.025, settle);
-    this.sword.rotation.z = -0.18 - speedRatio * 0.06 + strideSin * 0.015;
+    this.sword.rotation.x = THREE.MathUtils.lerp(this.sword.rotation.x, swordX, settle);
+    this.sword.rotation.y = THREE.MathUtils.lerp(this.sword.rotation.y, swordY, settle);
+    this.sword.rotation.z = THREE.MathUtils.lerp(this.sword.rotation.z, swordZ, settle);
+
+    const trailMaterial = this.swordTrail.material as THREE.MeshBasicMaterial;
+    trailMaterial.opacity += (trailOpacity - trailMaterial.opacity) * (1 - Math.exp(-24 * delta));
+    this.swordTrail.scale.x = 0.8 + trailOpacity * 0.35;
 
     for (let index = 0; index < this.cloakPanels.length; index += 1) {
       const panel = this.cloakPanels[index];
       if (!panel) continue;
       const wave = Math.sin(this.time * (2.6 + index * 0.12) + index * 0.7) * 0.035;
-      panel.rotation.x = 0.11 + speedRatio * 0.24 + wave;
+      panel.rotation.x = 0.11 + speedRatio * 0.24 + wave + (state === 'dodge' ? 0.38 : 0);
       panel.rotation.z = -turnRate * 0.018 + (index - 2) * 0.012;
     }
   }
@@ -199,4 +318,14 @@ export class AshenKnightVisual {
     mesh.receiveShadow = true;
     return mesh;
   }
+}
+
+function easeAttack(progress: number, start: number, end: number): number {
+  return THREE.MathUtils.smoothstep(progress, start, end);
+}
+
+function attackTrail(progress: number, start: number, end: number): number {
+  if (progress <= start || progress >= end) return 0;
+  const normalized = (progress - start) / (end - start);
+  return Math.sin(normalized * Math.PI);
 }

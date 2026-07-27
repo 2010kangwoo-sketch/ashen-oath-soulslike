@@ -19,11 +19,14 @@ export class ThirdPersonCamera {
   private lastPointerY = 0;
   private mouseDeltaX = 0;
   private mouseDeltaY = 0;
-  private yaw = GAME_CONFIG.camera.yaw;
-  private pitch = GAME_CONFIG.camera.pitch;
-  private distance = GAME_CONFIG.camera.distance;
-  private collisionDistance = GAME_CONFIG.camera.distance;
+  private yaw: number = GAME_CONFIG.camera.yaw;
+  private pitch: number = GAME_CONFIG.camera.pitch;
+  private distance: number = GAME_CONFIG.camera.distance;
+  private collisionDistance: number = GAME_CONFIG.camera.distance;
   private initialized = false;
+  private lockBlend: number = 0;
+  private cameraImpulse: number = 0;
+  private shakeTime: number = 0;
 
   constructor(
     private readonly camera: THREE.PerspectiveCamera,
@@ -39,8 +42,17 @@ export class ThirdPersonCamera {
     velocity: THREE.Vector3,
     sprintBlend: number,
     gamepadLook: LookAxes,
+    lockTarget: THREE.Vector3 | null,
   ): void {
     this.consumeLook(delta, gamepadLook);
+    this.lockBlend += ((lockTarget ? 1 : 0) - this.lockBlend) * (1 - Math.exp(-10 * delta));
+    if (lockTarget) {
+      const toLock = lockTarget.clone().sub(target).setY(0);
+      if (toLock.lengthSq() > 0.001) {
+        const lockYaw = Math.atan2(-toLock.x, -toLock.z);
+        this.yaw = moveAngleTowards(this.yaw, lockYaw, GAME_CONFIG.camera.lockYawSharpness * delta);
+      }
+    }
     this.planarForward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).normalize();
     this.planarRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).normalize();
 
@@ -49,6 +61,11 @@ export class ThirdPersonCamera {
       this.velocityLookAhead.setLength(GAME_CONFIG.camera.maxLookAhead);
     }
     this.desiredTarget.copy(target).add(this.velocityLookAhead);
+    if (lockTarget) {
+      const weightedLockTarget = lockTarget.clone();
+      weightedLockTarget.y = THREE.MathUtils.lerp(target.y, lockTarget.y, 0.42);
+      this.desiredTarget.lerp(weightedLockTarget, GAME_CONFIG.camera.lockTargetWeight * this.lockBlend);
+    }
     const targetAlpha = 1 - Math.exp(-GAME_CONFIG.camera.targetSharpness * delta);
     if (!this.initialized) {
       this.smoothedTarget.copy(this.desiredTarget);
@@ -93,9 +110,18 @@ export class ThirdPersonCamera {
     const positionAlpha = 1 - Math.exp(-GAME_CONFIG.camera.positionSharpness * delta);
     if (this.camera.position.lengthSq() === 0) this.camera.position.copy(this.desiredPosition);
     else this.camera.position.lerp(this.desiredPosition, positionAlpha);
+    this.shakeTime += delta;
+    this.cameraImpulse *= Math.exp(-11 * delta);
+    if (this.cameraImpulse > 0.001) {
+      const shake = this.cameraImpulse;
+      this.camera.position.x += Math.sin(this.shakeTime * 71) * shake * 0.075;
+      this.camera.position.y += Math.sin(this.shakeTime * 93 + 1.7) * shake * 0.055;
+      this.camera.position.z += Math.sin(this.shakeTime * 59 + 0.8) * shake * 0.05;
+    }
     this.camera.lookAt(this.smoothedTarget);
 
-    const targetFov = THREE.MathUtils.lerp(GAME_CONFIG.camera.fov, GAME_CONFIG.camera.sprintFov, sprintBlend);
+    const locomotionFov = THREE.MathUtils.lerp(GAME_CONFIG.camera.fov, GAME_CONFIG.camera.sprintFov, sprintBlend);
+    const targetFov = THREE.MathUtils.lerp(locomotionFov, GAME_CONFIG.camera.lockFov, this.lockBlend);
     this.camera.fov += (targetFov - this.camera.fov) * (1 - Math.exp(-6 * delta));
     this.camera.updateProjectionMatrix();
   }
@@ -106,6 +132,10 @@ export class ThirdPersonCamera {
 
   copyPlanarRight(target: THREE.Vector3): THREE.Vector3 {
     return target.copy(this.planarRight);
+  }
+
+  addImpulse(strength: number): void {
+    this.cameraImpulse = Math.max(this.cameraImpulse, strength);
   }
 
   isLocked(): boolean {
@@ -196,4 +226,13 @@ export class ThirdPersonCamera {
       GAME_CONFIG.camera.maxDistance,
     );
   };
+}
+
+function shortestAngle(angle: number): number {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
+function moveAngleTowards(current: number, target: number, maxDelta: number): number {
+  const delta = shortestAngle(target - current);
+  return current + THREE.MathUtils.clamp(delta, -maxDelta, maxDelta);
 }
