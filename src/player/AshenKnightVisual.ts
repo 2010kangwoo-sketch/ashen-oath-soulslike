@@ -27,146 +27,197 @@ export interface KnightVisualUpdate {
   chargeRatio: number;
 }
 
+interface HairJoint {
+  pivot: THREE.Group;
+  restX: number;
+  restZ: number;
+  angleX: number;
+  angleZ: number;
+  velocityX: number;
+  velocityZ: number;
+  inertia: number;
+}
+
+interface HairStrand {
+  joints: HairJoint[];
+  phase: number;
+  side: number;
+  drag: number;
+}
+
+/**
+ * Production player presentation rig.
+ *
+ * The character remains procedural so the repository has no temporary third-party
+ * character asset. The proportions, layered armour, face, hair chains and motion
+ * language are authored as a release-facing silhouette, not a collision debug doll.
+ */
 export class AshenKnightVisual {
   private static readonly RIG_BASE_HEIGHT = 0.22;
   readonly root = new THREE.Group();
   private readonly rig = new THREE.Group();
+  private readonly pelvisPivot = new THREE.Group();
   private readonly torsoPivot = new THREE.Group();
+  private readonly chestPivot = new THREE.Group();
   private readonly headPivot = new THREE.Group();
   private readonly leftArm = new THREE.Group();
   private readonly rightArm = new THREE.Group();
+  private readonly leftForearm = new THREE.Group();
+  private readonly rightForearm = new THREE.Group();
   private readonly leftLeg = new THREE.Group();
   private readonly rightLeg = new THREE.Group();
+  private readonly leftShin = new THREE.Group();
+  private readonly rightShin = new THREE.Group();
   private readonly cloakPanels: THREE.Mesh[] = [];
+  private readonly hairStrands: HairStrand[] = [];
   private readonly sword: THREE.Group;
   private readonly swordTrail: THREE.Mesh;
+  private readonly eyeMaterial: THREE.MeshStandardMaterial;
+  private readonly faceMaterial: THREE.MeshStandardMaterial;
   private time = 0;
   private stride = 0;
+  private previousSpeedRatio = 0;
+  private speedAcceleration = 0;
+  private blinkTimer = 2.4;
+  private gazeTimer = 0;
+  private gazeTarget = 0;
 
   constructor() {
-    this.root.name = 'ashen-knight-production-rig';
+    this.root.name = 'ashen-oath-female-vowkeeper-production-rig';
     this.root.add(this.rig);
 
-    const iron = new THREE.MeshStandardMaterial({ color: 0x34383a, roughness: 0.48, metalness: 0.72 });
-    const edge = new THREE.MeshStandardMaterial({ color: 0x686a67, roughness: 0.34, metalness: 0.86 });
-    const blackIron = new THREE.MeshStandardMaterial({ color: 0x15191b, roughness: 0.58, metalness: 0.62 });
-    const leather = new THREE.MeshStandardMaterial({ color: 0x241916, roughness: 0.92, metalness: 0.02 });
-    const cloth = new THREE.MeshStandardMaterial({ color: 0x241816, roughness: 0.97, side: THREE.DoubleSide });
+    const steel = new THREE.MeshStandardMaterial({ color: 0x373c40, roughness: 0.44, metalness: 0.78 });
+    const brightSteel = new THREE.MeshStandardMaterial({ color: 0x70777b, roughness: 0.3, metalness: 0.9 });
+    const darkSteel = new THREE.MeshStandardMaterial({ color: 0x15191c, roughness: 0.56, metalness: 0.68 });
+    const leather = new THREE.MeshStandardMaterial({ color: 0x291b17, roughness: 0.92, metalness: 0.02 });
+    const cloth = new THREE.MeshStandardMaterial({ color: 0x211519, roughness: 0.98, side: THREE.DoubleSide });
+    const innerCloth = new THREE.MeshStandardMaterial({ color: 0x4a2024, roughness: 0.94, side: THREE.DoubleSide });
+    const hair = new THREE.MeshStandardMaterial({ color: 0x211a1b, roughness: 0.82, metalness: 0.03 });
+    const hairHighlight = new THREE.MeshStandardMaterial({ color: 0x3b292b, roughness: 0.72, metalness: 0.04 });
+    this.faceMaterial = new THREE.MeshStandardMaterial({ color: 0xb98572, roughness: 0.87, metalness: 0 });
+    this.eyeMaterial = new THREE.MeshStandardMaterial({
+      color: 0xb8c0b7,
+      emissive: 0x29362f,
+      emissiveIntensity: 0.38,
+      roughness: 0.25,
+    });
     const ember = new THREE.MeshStandardMaterial({
-      color: 0xb49a70,
-      emissive: 0x4a2d12,
-      emissiveIntensity: 1.1,
-      roughness: 0.4,
-      metalness: 0.48,
+      color: 0xb69a6d,
+      emissive: 0x4b2c12,
+      emissiveIntensity: 1.05,
+      roughness: 0.38,
+      metalness: 0.5,
     });
 
-    this.torsoPivot.position.y = 0.16;
-    this.rig.add(this.torsoPivot);
+    this.pelvisPivot.position.y = -0.02;
+    this.rig.add(this.pelvisPivot);
+    this.torsoPivot.position.y = 0.18;
+    this.pelvisPivot.add(this.torsoPivot);
+    this.chestPivot.position.y = 0.2;
+    this.torsoPivot.add(this.chestPivot);
 
-    const waist = this.mesh(new THREE.CylinderGeometry(0.34, 0.43, 0.34, 10), blackIron);
-    waist.position.y = -0.18;
+    // Narrow waist and layered hip armour keep the silhouette readable without
+    // weakening the combat-ready stance.
+    const waist = this.mesh(new THREE.CylinderGeometry(0.27, 0.34, 0.34, 12), darkSteel);
+    waist.scale.z = 0.8;
+    waist.position.y = -0.2;
     this.torsoPivot.add(waist);
 
-    const breastplate = this.mesh(new THREE.CylinderGeometry(0.38, 0.48, 0.76, 10), iron);
-    breastplate.scale.z = 0.72;
-    breastplate.position.y = 0.18;
-    this.torsoPivot.add(breastplate);
+    const breastplate = this.mesh(new THREE.CylinderGeometry(0.34, 0.42, 0.7, 12), steel);
+    breastplate.scale.z = 0.7;
+    breastplate.position.y = 0.12;
+    this.chestPivot.add(breastplate);
 
-    const sternum = this.mesh(new THREE.BoxGeometry(0.16, 0.58, 0.08), edge);
-    sternum.position.set(0, 0.2, -0.38);
-    this.torsoPivot.add(sternum);
+    const ribPlates = this.mesh(new THREE.CylinderGeometry(0.35, 0.39, 0.38, 12, 1, true), brightSteel);
+    ribPlates.scale.z = 0.71;
+    ribPlates.position.y = 0.05;
+    this.chestPivot.add(ribPlates);
 
-    for (const x of [-0.48, 0.48]) {
-      const pauldron = this.mesh(new THREE.SphereGeometry(0.24, 10, 7, 0, Math.PI * 2, 0, Math.PI * 0.68), iron);
-      pauldron.scale.set(1.35, 0.78, 1.15);
-      pauldron.position.set(x, 0.43, -0.01);
-      this.torsoPivot.add(pauldron);
-    }
+    const sternum = this.mesh(new THREE.BoxGeometry(0.115, 0.54, 0.07), brightSteel);
+    sternum.position.set(0, 0.13, -0.33);
+    this.chestPivot.add(sternum);
 
-    this.headPivot.position.y = 0.72;
-    this.torsoPivot.add(this.headPivot);
-    const helmet = this.mesh(new THREE.DodecahedronGeometry(0.3, 0), blackIron);
-    helmet.scale.set(0.92, 1.12, 0.94);
-    this.headPivot.add(helmet);
-    const brow = this.mesh(new THREE.BoxGeometry(0.52, 0.12, 0.12), iron);
-    brow.position.set(0, 0.03, -0.27);
-    this.headPivot.add(brow);
-    const visor = this.mesh(new THREE.BoxGeometry(0.42, 0.055, 0.055), ember);
-    visor.position.set(0, -0.02, -0.338);
-    this.headPivot.add(visor);
-    const crest = this.mesh(new THREE.BoxGeometry(0.055, 0.42, 0.36), edge);
-    crest.position.set(0, 0.28, 0.02);
-    this.headPivot.add(crest);
+    const collar = this.mesh(new THREE.TorusGeometry(0.27, 0.055, 7, 20), brightSteel);
+    collar.rotation.x = Math.PI / 2;
+    collar.position.set(0, 0.47, 0.015);
+    this.chestPivot.add(collar);
 
-    this.leftArm.position.set(-0.48, 0.35, 0);
-    this.rightArm.position.set(0.48, 0.35, 0);
-    this.torsoPivot.add(this.leftArm, this.rightArm);
-    this.buildArm(this.leftArm, iron, leather);
-    this.buildArm(this.rightArm, iron, leather);
-
-    this.leftLeg.position.set(-0.21, -0.24, 0);
-    this.rightLeg.position.set(0.21, -0.24, 0);
-    this.rig.add(this.leftLeg, this.rightLeg);
-    this.buildLeg(this.leftLeg, iron, blackIron);
-    this.buildLeg(this.rightLeg, iron, blackIron);
-
-    const belt = this.mesh(new THREE.TorusGeometry(0.39, 0.055, 6, 18), leather);
-    belt.rotation.x = Math.PI / 2;
-    belt.position.y = -0.02;
-    this.rig.add(belt);
-
-    const gorget = this.mesh(new THREE.TorusGeometry(0.31, 0.065, 7, 18), edge);
-    gorget.rotation.x = Math.PI / 2;
-    gorget.position.set(0, 0.54, -0.01);
-    this.torsoPivot.add(gorget);
     for (const side of [-1, 1]) {
-      const mantle = this.mesh(new THREE.BoxGeometry(0.42, 0.12, 0.54), blackIron);
-      mantle.position.set(side * 0.36, 0.49, 0.06);
-      mantle.rotation.z = side * 0.09;
-      this.torsoPivot.add(mantle);
-      const knee = this.mesh(new THREE.DodecahedronGeometry(0.16, 0), edge);
-      knee.scale.set(1.05, 0.8, 0.72);
-      knee.position.set(side * 0.21, -0.71, -0.18);
-      this.rig.add(knee);
+      const pauldron = this.mesh(new THREE.SphereGeometry(0.2, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.66), steel);
+      pauldron.scale.set(1.28, 0.7, 1.08);
+      pauldron.position.set(side * 0.43, 0.39, 0.01);
+      pauldron.rotation.z = side * 0.08;
+      this.chestPivot.add(pauldron);
+
+      const hipPlate = this.mesh(new THREE.BoxGeometry(0.22, 0.48, 0.08), side < 0 ? darkSteel : steel);
+      hipPlate.position.set(side * 0.28, -0.38, 0.02);
+      hipPlate.rotation.z = side * 0.08;
+      this.pelvisPivot.add(hipPlate);
     }
+
+    this.buildHead(hair, hairHighlight, darkSteel, brightSteel);
+
+    this.leftArm.position.set(-0.43, 0.36, 0);
+    this.rightArm.position.set(0.43, 0.36, 0);
+    this.chestPivot.add(this.leftArm, this.rightArm);
+    this.buildArm(this.leftArm, this.leftForearm, steel, leather, -1);
+    this.buildArm(this.rightArm, this.rightForearm, steel, leather, 1);
+
+    this.leftLeg.position.set(-0.18, -0.24, 0);
+    this.rightLeg.position.set(0.18, -0.24, 0);
+    this.pelvisPivot.add(this.leftLeg, this.rightLeg);
+    this.buildLeg(this.leftLeg, this.leftShin, steel, darkSteel, -1);
+    this.buildLeg(this.rightLeg, this.rightShin, steel, darkSteel, 1);
+
+    const belt = this.mesh(new THREE.TorusGeometry(0.34, 0.05, 6, 20), leather);
+    belt.rotation.x = Math.PI / 2;
+    belt.position.y = -0.08;
+    this.pelvisPivot.add(belt);
+
     for (let index = 0; index < 6; index += 1) {
       const angle = (index / 6) * Math.PI * 2;
-      const plate = this.mesh(new THREE.BoxGeometry(0.2, 0.48, 0.08), index % 2 === 0 ? iron : blackIron);
-      plate.position.set(Math.sin(angle) * 0.31, -0.33, Math.cos(angle) * 0.28);
+      const plate = this.mesh(new THREE.BoxGeometry(0.18, 0.46, 0.065), index % 2 === 0 ? steel : darkSteel);
+      plate.position.set(Math.sin(angle) * 0.27, -0.37, Math.cos(angle) * 0.25);
       plate.rotation.y = angle;
-      plate.rotation.x = Math.cos(angle) * 0.08;
-      this.rig.add(plate);
+      plate.rotation.x = Math.cos(angle) * 0.07;
+      this.pelvisPivot.add(plate);
     }
+
+    const skirt = this.mesh(new THREE.CylinderGeometry(0.29, 0.49, 0.72, 12, 1, true), innerCloth);
+    skirt.position.y = -0.48;
+    skirt.scale.z = 0.86;
+    this.pelvisPivot.add(skirt);
+
     const groundShadow = new THREE.Mesh(
-      new THREE.CircleGeometry(0.72, 24),
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }),
+      new THREE.CircleGeometry(0.67, 28),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.27, depthWrite: false }),
     );
     groundShadow.rotation.x = -Math.PI / 2;
     groundShadow.position.y = -1.02;
     this.rig.add(groundShadow);
 
-    for (let index = 0; index < 5; index += 1) {
-      const panel = this.mesh(new THREE.PlaneGeometry(0.24, 1.18, 1, 4), cloth);
-      panel.position.set((index - 2) * 0.18, 0.08, 0.34 + Math.abs(index - 2) * 0.015);
-      panel.rotation.x = 0.11;
+    for (let index = 0; index < 7; index += 1) {
+      const panel = this.mesh(new THREE.PlaneGeometry(index === 3 ? 0.22 : 0.18, 1.14, 1, 5), cloth);
+      panel.position.set((index - 3) * 0.145, 0.06, 0.31 + Math.abs(index - 3) * 0.012);
+      panel.rotation.x = 0.1;
       this.rig.add(panel);
       this.cloakPanels.push(panel);
     }
 
-    this.sword = this.buildSword(iron, edge, leather, ember);
-    this.sword.position.set(0.62, 0.1, 0.12);
+    this.sword = this.buildSword(steel, brightSteel, leather, ember);
+    this.sword.position.set(0.56, 0.08, 0.11);
     this.sword.rotation.set(0.08, 0, -0.18);
     this.rig.add(this.sword);
 
     const trailMaterial = new THREE.MeshBasicMaterial({
-      color: 0xd7bd8d,
+      color: 0xd8c092,
       transparent: true,
       opacity: 0,
       depthWrite: false,
       side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
     });
-    this.swordTrail = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 1.85), trailMaterial);
+    this.swordTrail = new THREE.Mesh(new THREE.PlaneGeometry(0.66, 1.82), trailMaterial);
     this.swordTrail.position.set(0, -0.43, 0.07);
     this.swordTrail.rotation.y = Math.PI / 2;
     this.sword.add(this.swordTrail);
@@ -174,147 +225,217 @@ export class AshenKnightVisual {
 
   update({ delta, state, speedRatio, turnRate, verticalSpeed, actionProgress, chargeRatio }: KnightVisualUpdate): void {
     this.time += delta;
+    this.speedAcceleration += ((speedRatio - this.previousSpeedRatio) / Math.max(delta, 1 / 120) - this.speedAcceleration)
+      * (1 - Math.exp(-8 * delta));
+    this.previousSpeedRatio = speedRatio;
+
     const moving = state === 'walk' || state === 'run';
-    if (moving) this.stride += delta * THREE.MathUtils.lerp(6.2, 10.8, speedRatio);
+    if (moving) this.stride += delta * THREE.MathUtils.lerp(5.8, 10.2, speedRatio);
 
     const strideSin = Math.sin(this.stride);
     const strideCos = Math.cos(this.stride);
-    const strideAmount = moving ? THREE.MathUtils.lerp(0.18, 0.58, speedRatio) : 0;
+    const strideAmount = moving ? THREE.MathUtils.lerp(0.15, 0.55, speedRatio) : 0;
     const settle = 1 - Math.exp(-15 * delta);
 
     let leftLegX = strideSin * strideAmount;
     let rightLegX = -strideSin * strideAmount;
-    let leftArmX = -strideSin * strideAmount * 0.55;
-    let rightArmX = strideSin * strideAmount * 0.35;
+    let leftKneeX = Math.max(0, -strideSin) * strideAmount * 0.6;
+    let rightKneeX = Math.max(0, strideSin) * strideAmount * 0.6;
+    let leftArmX = -strideSin * strideAmount * 0.45;
+    let rightArmX = strideSin * strideAmount * 0.3;
+    let leftElbowX = -0.08;
+    let rightElbowX = -0.12;
     let leftArmZ = 0;
     let rightArmZ = 0;
-    let torsoX = state === 'run' ? 0.09 : 0.015;
+    let pelvisY = moving ? -strideSin * 0.045 * speedRatio : 0;
+    let pelvisZ = moving ? strideSin * 0.035 * speedRatio : 0;
+    let torsoX = state === 'run' ? 0.085 : 0.012;
     let torsoY = 0;
-    let torsoZ = -turnRate * 0.05;
+    let torsoZ = -turnRate * 0.045;
+    let chestY = moving ? -strideSin * 0.045 * speedRatio : 0;
+    let chestZ = moving ? -strideSin * 0.026 * speedRatio : 0;
+    let headX = 0;
+    let headY = 0;
+    let headZ = 0;
     let swordX = 0.08;
     let swordY = 0;
-    let swordZ = -0.18 - speedRatio * 0.06 + strideSin * 0.015;
+    let swordZ = -0.18 - speedRatio * 0.055 + strideSin * 0.014;
     let trailOpacity = 0;
 
     if (state === 'dodge') {
       const roll = actionProgress * Math.PI * 2;
-      torsoX = 0.58 + Math.sin(actionProgress * Math.PI) * 0.42;
-      torsoZ = Math.sin(roll) * 0.08;
-      leftLegX = 0.62;
-      rightLegX = 0.38;
-      leftArmX = -0.45;
-      rightArmX = -0.6;
+      torsoX = 0.56 + Math.sin(actionProgress * Math.PI) * 0.4;
+      torsoZ = Math.sin(roll) * 0.075;
+      chestZ = -Math.sin(roll) * 0.06;
+      headX = -0.2;
+      leftLegX = 0.58;
+      rightLegX = 0.35;
+      leftKneeX = 0.42;
+      rightKneeX = 0.3;
+      leftArmX = -0.4;
+      rightArmX = -0.56;
       swordZ = -0.55;
     } else if (state === 'light1') {
       const swing = easeAttack(actionProgress, 0.2, 0.58);
-      torsoY = THREE.MathUtils.lerp(-0.72, 0.82, swing);
-      torsoX = 0.14;
-      torsoZ = THREE.MathUtils.lerp(0.22, -0.25, swing);
-      rightArmX = THREE.MathUtils.lerp(-1.85, 0.68, swing);
-      rightArmZ = THREE.MathUtils.lerp(-0.55, 0.78, swing);
-      swordZ = THREE.MathUtils.lerp(-1.15, 0.62, swing);
+      torsoY = THREE.MathUtils.lerp(-0.7, 0.8, swing);
+      pelvisY = THREE.MathUtils.lerp(-0.16, 0.18, swing);
+      chestY = THREE.MathUtils.lerp(-0.22, 0.28, swing);
+      torsoX = 0.13;
+      torsoZ = THREE.MathUtils.lerp(0.2, -0.24, swing);
+      rightArmX = THREE.MathUtils.lerp(-1.8, 0.64, swing);
+      rightArmZ = THREE.MathUtils.lerp(-0.52, 0.74, swing);
+      rightElbowX = THREE.MathUtils.lerp(-0.45, 0.18, swing);
+      leftArmX = THREE.MathUtils.lerp(-0.4, -0.1, swing);
+      headY = THREE.MathUtils.lerp(0.12, -0.08, swing);
+      swordZ = THREE.MathUtils.lerp(-1.12, 0.6, swing);
       trailOpacity = attackTrail(actionProgress, 0.2, 0.55);
     } else if (state === 'light2') {
       const swing = easeAttack(actionProgress, 0.22, 0.62);
-      torsoY = THREE.MathUtils.lerp(0.82, -0.92, swing);
-      torsoX = 0.18;
-      torsoZ = THREE.MathUtils.lerp(-0.3, 0.3, swing);
-      rightArmX = THREE.MathUtils.lerp(-1.35, 0.48, swing);
-      rightArmZ = THREE.MathUtils.lerp(0.9, -0.82, swing);
-      swordZ = THREE.MathUtils.lerp(0.72, -1.0, swing);
+      torsoY = THREE.MathUtils.lerp(0.8, -0.9, swing);
+      pelvisY = THREE.MathUtils.lerp(0.17, -0.2, swing);
+      chestY = THREE.MathUtils.lerp(0.25, -0.31, swing);
+      torsoX = 0.17;
+      torsoZ = THREE.MathUtils.lerp(-0.28, 0.28, swing);
+      rightArmX = THREE.MathUtils.lerp(-1.32, 0.45, swing);
+      rightArmZ = THREE.MathUtils.lerp(0.86, -0.8, swing);
+      rightElbowX = THREE.MathUtils.lerp(-0.35, 0.16, swing);
+      headY = THREE.MathUtils.lerp(-0.12, 0.1, swing);
+      swordZ = THREE.MathUtils.lerp(0.7, -0.98, swing);
       trailOpacity = attackTrail(actionProgress, 0.22, 0.58);
     } else if (state === 'light3') {
       const thrust = easeAttack(actionProgress, 0.24, 0.56);
-      torsoX = THREE.MathUtils.lerp(-0.12, 0.42, thrust);
-      torsoY = THREE.MathUtils.lerp(-0.32, 0.2, thrust);
-      torsoZ = THREE.MathUtils.lerp(0.12, -0.18, thrust);
-      rightArmX = THREE.MathUtils.lerp(-1.62, -0.18, thrust);
-      rightArmZ = THREE.MathUtils.lerp(0.28, -0.08, thrust);
-      leftArmX = THREE.MathUtils.lerp(-0.72, -0.22, thrust);
-      swordX = THREE.MathUtils.lerp(-0.72, -1.54, thrust);
+      torsoX = THREE.MathUtils.lerp(-0.1, 0.4, thrust);
+      pelvisY = THREE.MathUtils.lerp(-0.09, 0.12, thrust);
+      torsoY = THREE.MathUtils.lerp(-0.3, 0.18, thrust);
+      torsoZ = THREE.MathUtils.lerp(0.1, -0.16, thrust);
+      rightArmX = THREE.MathUtils.lerp(-1.58, -0.16, thrust);
+      rightArmZ = THREE.MathUtils.lerp(0.26, -0.07, thrust);
+      rightElbowX = THREE.MathUtils.lerp(-0.72, -0.06, thrust);
+      leftArmX = THREE.MathUtils.lerp(-0.68, -0.2, thrust);
+      leftElbowX = -0.52;
+      swordX = THREE.MathUtils.lerp(-0.68, -1.5, thrust);
       swordZ = THREE.MathUtils.lerp(-0.18, -0.02, thrust);
+      headX = -0.06;
       trailOpacity = attackTrail(actionProgress, 0.3, 0.56) * 0.85;
     } else if (state === 'heavyCharge') {
-      const pulse = Math.sin(this.time * 9) * 0.03 * chargeRatio;
-      torsoX = THREE.MathUtils.lerp(0.02, -0.32, chargeRatio) + pulse;
-      torsoY = THREE.MathUtils.lerp(0, -0.18, chargeRatio);
-      leftArmX = THREE.MathUtils.lerp(-0.18, -1.24, chargeRatio);
-      rightArmX = THREE.MathUtils.lerp(-0.18, -2.42, chargeRatio);
-      rightArmZ = THREE.MathUtils.lerp(0, -0.42, chargeRatio);
-      swordX = THREE.MathUtils.lerp(0.08, -0.5, chargeRatio);
-      swordZ = THREE.MathUtils.lerp(-0.18, -0.52, chargeRatio);
-      leftLegX = 0.18 * chargeRatio;
-      rightLegX = -0.1 * chargeRatio;
+      const pulse = Math.sin(this.time * 9) * 0.025 * chargeRatio;
+      torsoX = THREE.MathUtils.lerp(0.02, -0.3, chargeRatio) + pulse;
+      torsoY = THREE.MathUtils.lerp(0, -0.17, chargeRatio);
+      chestY = -0.08 * chargeRatio;
+      pelvisZ = -0.07 * chargeRatio;
+      leftArmX = THREE.MathUtils.lerp(-0.16, -1.2, chargeRatio);
+      rightArmX = THREE.MathUtils.lerp(-0.18, -2.36, chargeRatio);
+      rightArmZ = THREE.MathUtils.lerp(0, -0.4, chargeRatio);
+      rightElbowX = -0.58 * chargeRatio;
+      swordX = THREE.MathUtils.lerp(0.08, -0.48, chargeRatio);
+      swordZ = THREE.MathUtils.lerp(-0.18, -0.5, chargeRatio);
+      leftLegX = 0.16 * chargeRatio;
+      rightLegX = -0.09 * chargeRatio;
+      headY = 0.06;
     } else if (state === 'heavy') {
       const windup = THREE.MathUtils.smoothstep(actionProgress, 0, 0.42);
       const smash = THREE.MathUtils.smoothstep(actionProgress, 0.43, 0.73);
-      torsoX = THREE.MathUtils.lerp(-0.22, 0.48, smash);
-      torsoZ = -0.12 * windup;
-      rightArmX = THREE.MathUtils.lerp(-2.65, 0.86, smash);
-      leftArmX = THREE.MathUtils.lerp(-1.3, 0.35, smash);
-      swordX = THREE.MathUtils.lerp(-0.45, 0.45, smash);
-      swordZ = THREE.MathUtils.lerp(-0.25, 0.1, smash);
+      torsoX = THREE.MathUtils.lerp(-0.2, 0.46, smash);
+      torsoZ = -0.11 * windup;
+      pelvisZ = 0.08 * smash;
+      chestY = THREE.MathUtils.lerp(-0.12, 0.18, smash);
+      rightArmX = THREE.MathUtils.lerp(-2.58, 0.82, smash);
+      leftArmX = THREE.MathUtils.lerp(-1.26, 0.32, smash);
+      rightElbowX = THREE.MathUtils.lerp(-0.62, 0.18, smash);
+      swordX = THREE.MathUtils.lerp(-0.43, 0.43, smash);
+      swordZ = THREE.MathUtils.lerp(-0.24, 0.1, smash);
+      headX = THREE.MathUtils.lerp(-0.1, 0.08, smash);
       trailOpacity = attackTrail(actionProgress, 0.45, 0.72) * 1.25;
     } else if (state === 'guard') {
-      torsoX = 0.08;
-      torsoY = -0.12;
-      leftArmX = -0.95;
-      rightArmX = -0.72;
-      leftArmZ = -0.52;
-      rightArmZ = 0.28;
-      swordZ = -0.62;
+      torsoX = 0.075;
+      torsoY = -0.11;
+      pelvisY = 0.05;
+      leftArmX = -0.92;
+      rightArmX = -0.7;
+      leftArmZ = -0.48;
+      rightArmZ = 0.27;
+      leftElbowX = -0.42;
+      rightElbowX = -0.3;
+      headY = 0.08;
+      swordZ = -0.6;
     } else if (state === 'parry') {
       const snap = THREE.MathUtils.smoothstep(actionProgress, 0.08, 0.38);
-      torsoY = THREE.MathUtils.lerp(-0.42, 0.38, snap);
-      torsoX = 0.12;
-      leftArmX = THREE.MathUtils.lerp(-1.2, -0.35, snap);
-      rightArmX = THREE.MathUtils.lerp(-1.55, 0.1, snap);
-      rightArmZ = THREE.MathUtils.lerp(-0.6, 0.65, snap);
-      swordZ = THREE.MathUtils.lerp(-1.05, 0.48, snap);
+      torsoY = THREE.MathUtils.lerp(-0.4, 0.36, snap);
+      chestY = THREE.MathUtils.lerp(-0.14, 0.14, snap);
+      torsoX = 0.11;
+      leftArmX = THREE.MathUtils.lerp(-1.16, -0.32, snap);
+      rightArmX = THREE.MathUtils.lerp(-1.5, 0.08, snap);
+      rightArmZ = THREE.MathUtils.lerp(-0.56, 0.62, snap);
+      rightElbowX = THREE.MathUtils.lerp(-0.48, 0.12, snap);
+      swordZ = THREE.MathUtils.lerp(-1.02, 0.46, snap);
+      headY = THREE.MathUtils.lerp(0.1, -0.08, snap);
       trailOpacity = attackTrail(actionProgress, 0.08, 0.34) * 0.55;
     } else if (state === 'execute') {
       const close = THREE.MathUtils.smoothstep(actionProgress, 0, 0.32);
       const drive = THREE.MathUtils.smoothstep(actionProgress, 0.32, 0.58);
       const withdraw = THREE.MathUtils.smoothstep(actionProgress, 0.7, 1);
-      torsoX = 0.18 + drive * 0.4 - withdraw * 0.22;
-      torsoY = -0.1 + drive * 0.18;
-      rightArmX = THREE.MathUtils.lerp(-1.5, -0.2, drive) + withdraw * 0.45;
-      leftArmX = THREE.MathUtils.lerp(-0.75, -0.28, close);
-      swordX = THREE.MathUtils.lerp(-0.7, -1.5, drive) + withdraw * 0.62;
+      torsoX = 0.17 + drive * 0.38 - withdraw * 0.2;
+      torsoY = -0.1 + drive * 0.17;
+      chestY = drive * 0.09;
+      rightArmX = THREE.MathUtils.lerp(-1.46, -0.18, drive) + withdraw * 0.43;
+      rightElbowX = THREE.MathUtils.lerp(-0.62, -0.06, drive);
+      leftArmX = THREE.MathUtils.lerp(-0.72, -0.26, close);
+      swordX = THREE.MathUtils.lerp(-0.68, -1.46, drive) + withdraw * 0.6;
       swordZ = -0.12;
-      leftLegX = 0.24;
-      rightLegX = -0.12;
+      leftLegX = 0.22;
+      rightLegX = -0.11;
+      headX = -0.09;
       trailOpacity = attackTrail(actionProgress, 0.42, 0.6) * 0.45;
     } else if (state === 'stagger') {
-      torsoX = -0.34;
-      torsoZ = Math.sin(actionProgress * Math.PI) * 0.24;
-      leftArmX = 0.48;
-      rightArmX = 0.7;
-      swordZ = -0.78;
+      torsoX = -0.32;
+      torsoZ = Math.sin(actionProgress * Math.PI) * 0.22;
+      chestZ = -torsoZ * 0.35;
+      headX = -0.18;
+      leftArmX = 0.45;
+      rightArmX = 0.66;
+      swordZ = -0.76;
     } else if (state === 'dead') {
-      torsoX = 1.22;
-      torsoZ = 0.22;
-      leftLegX = 0.3;
-      rightLegX = -0.3;
-      swordZ = -1.15;
+      torsoX = 1.18;
+      torsoZ = 0.21;
+      headX = -0.28;
+      leftLegX = 0.28;
+      rightLegX = -0.28;
+      swordZ = -1.12;
+    } else if (state === 'airborne') {
+      torsoX = verticalSpeed < 0 ? 0.04 : -0.03;
+      leftLegX = 0.16;
+      rightLegX = -0.12;
+      leftKneeX = 0.18;
+      rightKneeX = 0.08;
+      leftArmX = -0.12;
+      rightArmX = -0.18;
     }
 
     this.leftLeg.rotation.x = THREE.MathUtils.lerp(this.leftLeg.rotation.x, leftLegX, settle);
     this.rightLeg.rotation.x = THREE.MathUtils.lerp(this.rightLeg.rotation.x, rightLegX, settle);
+    this.leftShin.rotation.x = THREE.MathUtils.lerp(this.leftShin.rotation.x, leftKneeX, settle);
+    this.rightShin.rotation.x = THREE.MathUtils.lerp(this.rightShin.rotation.x, rightKneeX, settle);
     this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, leftArmX, settle);
     this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, rightArmX, settle);
+    this.leftForearm.rotation.x = THREE.MathUtils.lerp(this.leftForearm.rotation.x, leftElbowX, settle);
+    this.rightForearm.rotation.x = THREE.MathUtils.lerp(this.rightForearm.rotation.x, rightElbowX, settle);
     this.leftArm.rotation.z = THREE.MathUtils.lerp(this.leftArm.rotation.z, leftArmZ, settle);
     this.rightArm.rotation.z = THREE.MathUtils.lerp(this.rightArm.rotation.z, rightArmZ, settle);
 
-    const idleBreath = state === 'idle' ? Math.sin(this.time * 1.7) * 0.012 : 0;
-    const footBob = moving ? Math.abs(strideCos) * 0.026 * speedRatio : 0;
+    const idleBreath = state === 'idle' ? Math.sin(this.time * 1.55) * 0.014 : 0;
+    const footBob = moving ? Math.abs(strideCos) * 0.023 * speedRatio : 0;
     this.rig.position.y = AshenKnightVisual.RIG_BASE_HEIGHT + idleBreath + footBob
       + (state === 'airborne' ? THREE.MathUtils.clamp(verticalSpeed * 0.006, -0.08, 0.05) : 0);
-    this.rig.rotation.x = THREE.MathUtils.lerp(this.rig.rotation.x, state === 'dead' ? -0.2 : 0, settle);
+    this.rig.rotation.x = THREE.MathUtils.lerp(this.rig.rotation.x, state === 'dead' ? -0.18 : 0, settle);
+    this.pelvisPivot.rotation.y = THREE.MathUtils.lerp(this.pelvisPivot.rotation.y, pelvisY, settle);
+    this.pelvisPivot.rotation.z = THREE.MathUtils.lerp(this.pelvisPivot.rotation.z, pelvisZ, settle);
     this.torsoPivot.rotation.x = THREE.MathUtils.lerp(this.torsoPivot.rotation.x, torsoX, settle);
     this.torsoPivot.rotation.y = THREE.MathUtils.lerp(this.torsoPivot.rotation.y, torsoY, settle);
     this.torsoPivot.rotation.z = THREE.MathUtils.lerp(this.torsoPivot.rotation.z, torsoZ, settle);
-    this.headPivot.rotation.y = THREE.MathUtils.lerp(this.headPivot.rotation.y, turnRate * 0.025, settle);
+    this.chestPivot.rotation.y = THREE.MathUtils.lerp(this.chestPivot.rotation.y, chestY, settle);
+    this.chestPivot.rotation.z = THREE.MathUtils.lerp(this.chestPivot.rotation.z, chestZ, settle);
+
+    this.updateFace(delta, state, turnRate, speedRatio, headX, headY, headZ, settle);
     this.sword.rotation.x = THREE.MathUtils.lerp(this.sword.rotation.x, swordX, settle);
     this.sword.rotation.y = THREE.MathUtils.lerp(this.sword.rotation.y, swordY, settle);
     this.sword.rotation.z = THREE.MathUtils.lerp(this.sword.rotation.z, swordZ, settle);
@@ -326,37 +447,266 @@ export class AshenKnightVisual {
     for (let index = 0; index < this.cloakPanels.length; index += 1) {
       const panel = this.cloakPanels[index];
       if (!panel) continue;
-      const wave = Math.sin(this.time * (2.6 + index * 0.12) + index * 0.7) * 0.035;
-      panel.rotation.x = 0.11 + speedRatio * 0.24 + wave
-        + (state === 'dodge' ? 0.38 : 0)
+      const wave = Math.sin(this.time * (2.4 + index * 0.1) + index * 0.72) * 0.032;
+      panel.rotation.x = 0.1 + speedRatio * 0.22 + wave
+        + THREE.MathUtils.clamp(this.speedAcceleration * 0.012, -0.12, 0.18)
+        + (state === 'dodge' ? 0.4 : 0)
         + (state === 'heavy' || state === 'execute' ? 0.16 : 0)
         + (state === 'heavyCharge' ? chargeRatio * 0.08 : 0);
-      panel.rotation.z = -turnRate * 0.018 + (index - 2) * 0.012;
+      panel.rotation.z = -turnRate * 0.017 + (index - 3) * 0.01;
+    }
+
+    this.updateHair(delta, state, speedRatio, turnRate, verticalSpeed, actionProgress, chargeRatio);
+  }
+
+  private buildHead(
+    hair: THREE.Material,
+    hairHighlight: THREE.Material,
+    darkSteel: THREE.Material,
+    brightSteel: THREE.Material,
+  ): void {
+    this.headPivot.position.y = 0.72;
+    this.chestPivot.add(this.headPivot);
+
+    const neck = this.mesh(new THREE.CylinderGeometry(0.13, 0.15, 0.24, 10), this.faceMaterial);
+    neck.position.y = -0.15;
+    this.headPivot.add(neck);
+
+    const face = this.mesh(new THREE.SphereGeometry(0.255, 18, 14), this.faceMaterial);
+    face.scale.set(0.82, 1.08, 0.76);
+    face.position.z = -0.015;
+    this.headPivot.add(face);
+
+    const jaw = this.mesh(new THREE.SphereGeometry(0.19, 14, 10), this.faceMaterial);
+    jaw.scale.set(0.82, 0.7, 0.72);
+    jaw.position.set(0, -0.16, -0.025);
+    this.headPivot.add(jaw);
+
+    const nose = this.mesh(new THREE.ConeGeometry(0.035, 0.12, 6), this.faceMaterial);
+    nose.rotation.x = -Math.PI / 2;
+    nose.position.set(0, -0.02, -0.205);
+    this.headPivot.add(nose);
+
+    for (const side of [-1, 1]) {
+      const eye = this.mesh(new THREE.SphereGeometry(0.027, 10, 8), this.eyeMaterial);
+      eye.scale.set(1.2, 0.55, 0.5);
+      eye.position.set(side * 0.085, 0.055, -0.19);
+      eye.name = side < 0 ? 'left-eye' : 'right-eye';
+      this.headPivot.add(eye);
+
+      const brow = this.mesh(new THREE.BoxGeometry(0.11, 0.018, 0.022), darkSteel);
+      brow.position.set(side * 0.085, 0.105, -0.205);
+      brow.rotation.z = side * -0.08;
+      this.headPivot.add(brow);
+
+      const cheekGuard = this.mesh(new THREE.BoxGeometry(0.09, 0.22, 0.06), darkSteel);
+      cheekGuard.position.set(side * 0.205, -0.035, -0.08);
+      cheekGuard.rotation.z = side * -0.06;
+      this.headPivot.add(cheekGuard);
+    }
+
+    const halfMask = this.mesh(new THREE.BoxGeometry(0.32, 0.105, 0.075), darkSteel);
+    halfMask.position.set(0, -0.115, -0.19);
+    this.headPivot.add(halfMask);
+    const maskEdge = this.mesh(new THREE.BoxGeometry(0.34, 0.025, 0.085), brightSteel);
+    maskEdge.position.set(0, -0.06, -0.196);
+    this.headPivot.add(maskEdge);
+
+    const hairCap = this.mesh(new THREE.SphereGeometry(0.27, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.72), hair);
+    hairCap.scale.set(0.9, 1.02, 0.9);
+    hairCap.position.set(0, 0.07, 0.035);
+    this.headPivot.add(hairCap);
+
+    // Front fringe uses short chains so it reacts lightly without covering the eyes.
+    this.createHairStrand(new THREE.Vector3(-0.13, 0.2, -0.18), 3, 0.13, 0.065, hairHighlight, -1, 0.2, 0.45);
+    this.createHairStrand(new THREE.Vector3(0.11, 0.21, -0.19), 3, 0.125, 0.06, hairHighlight, 1, 1.1, 0.42);
+    this.createHairStrand(new THREE.Vector3(-0.04, 0.23, -0.205), 2, 0.1, 0.055, hair, -0.2, 2.2, 0.36);
+
+    // Side locks frame the face and react more strongly to turning.
+    this.createHairStrand(new THREE.Vector3(-0.235, 0.12, -0.02), 5, 0.17, 0.075, hair, -1, 0.6, 0.72);
+    this.createHairStrand(new THREE.Vector3(0.235, 0.12, -0.02), 5, 0.17, 0.075, hair, 1, 1.8, 0.72);
+
+    // Layered rear hair and tied tail use different inertia so they do not move as one sheet.
+    this.createHairStrand(new THREE.Vector3(-0.15, 0.16, 0.17), 5, 0.19, 0.09, hairHighlight, -0.65, 0.1, 0.86);
+    this.createHairStrand(new THREE.Vector3(0, 0.19, 0.22), 6, 0.2, 0.095, hair, 0, 1.0, 0.96);
+    this.createHairStrand(new THREE.Vector3(0.15, 0.16, 0.17), 5, 0.19, 0.09, hairHighlight, 0.65, 2.1, 0.86);
+
+    const tie = this.mesh(new THREE.TorusGeometry(0.09, 0.025, 6, 16), brightSteel);
+    tie.rotation.x = Math.PI / 2;
+    tie.position.set(0, 0.02, 0.25);
+    this.headPivot.add(tie);
+    this.createHairStrand(new THREE.Vector3(0, 0.02, 0.28), 7, 0.22, 0.1, hairHighlight, 0, 2.7, 1.2);
+  }
+
+  private createHairStrand(
+    origin: THREE.Vector3,
+    segmentCount: number,
+    segmentLength: number,
+    width: number,
+    material: THREE.Material,
+    side: number,
+    phase: number,
+    drag: number,
+  ): void {
+    const strand: HairStrand = { joints: [], phase, side, drag };
+    let parent = this.headPivot;
+    for (let index = 0; index < segmentCount; index += 1) {
+      const pivot = new THREE.Group();
+      pivot.position.copy(index === 0 ? origin : new THREE.Vector3(0, -segmentLength * 0.88, 0.012));
+      parent.add(pivot);
+
+      const taper = 1 - index / Math.max(1, segmentCount) * 0.58;
+      const segment = this.mesh(new THREE.CapsuleGeometry(width * taper, segmentLength, 4, 7), material);
+      segment.position.y = -segmentLength * 0.48;
+      segment.scale.z = 0.62;
+      pivot.add(segment);
+
+      strand.joints.push({
+        pivot,
+        restX: 0.05 + index * 0.018,
+        restZ: side * 0.018 * index,
+        angleX: 0,
+        angleZ: 0,
+        velocityX: 0,
+        velocityZ: 0,
+        inertia: THREE.MathUtils.lerp(0.55, 1.25, index / Math.max(1, segmentCount - 1)),
+      });
+      parent = pivot;
+    }
+    this.hairStrands.push(strand);
+  }
+
+  private updateHair(
+    delta: number,
+    state: KnightVisualState,
+    speedRatio: number,
+    turnRate: number,
+    verticalSpeed: number,
+    actionProgress: number,
+    chargeRatio: number,
+  ): void {
+    const cappedDelta = Math.min(delta, 1 / 30);
+    const dodgeImpulse = state === 'dodge' ? Math.sin(actionProgress * Math.PI) * 0.72 : 0;
+    const strikeImpulse = state.startsWith('light') || state === 'heavy' || state === 'execute'
+      ? Math.sin(actionProgress * Math.PI) * 0.24
+      : 0;
+    const staggerImpulse = state === 'stagger' ? Math.sin(actionProgress * Math.PI) * -0.34 : 0;
+    const airborneLift = THREE.MathUtils.clamp(-verticalSpeed * 0.026, -0.25, 0.34);
+    const accelerationPull = THREE.MathUtils.clamp(-this.speedAcceleration * 0.02, -0.34, 0.38);
+
+    for (const strand of this.hairStrands) {
+      for (let index = 0; index < strand.joints.length; index += 1) {
+        const joint = strand.joints[index];
+        if (!joint) continue;
+        const chainRatio = (index + 1) / strand.joints.length;
+        const wind = Math.sin(this.time * (2.2 + strand.drag) + strand.phase + index * 0.47) * 0.025 * chainRatio;
+        const targetX = joint.restX
+          + speedRatio * strand.drag * 0.18 * chainRatio
+          + dodgeImpulse * chainRatio
+          + strikeImpulse * strand.drag * chainRatio
+          + staggerImpulse * chainRatio
+          + airborneLift * chainRatio
+          + accelerationPull * chainRatio
+          + wind
+          + (state === 'heavyCharge' ? chargeRatio * 0.08 * chainRatio : 0);
+        const targetZ = joint.restZ
+          - turnRate * 0.035 * joint.inertia * chainRatio
+          + strand.side * speedRatio * 0.018
+          + Math.sin(this.time * 1.8 + strand.phase) * 0.012 * chainRatio;
+
+        const stiffness = THREE.MathUtils.lerp(34, 16, chainRatio) / joint.inertia;
+        const damping = THREE.MathUtils.lerp(9.5, 6.2, chainRatio);
+        joint.velocityX += (targetX - joint.angleX) * stiffness * cappedDelta;
+        joint.velocityZ += (targetZ - joint.angleZ) * stiffness * cappedDelta;
+        joint.velocityX *= Math.exp(-damping * cappedDelta);
+        joint.velocityZ *= Math.exp(-damping * cappedDelta);
+        joint.angleX += joint.velocityX * cappedDelta;
+        joint.angleZ += joint.velocityZ * cappedDelta;
+        joint.angleX = THREE.MathUtils.clamp(joint.angleX, -0.45, 1.28);
+        joint.angleZ = THREE.MathUtils.clamp(joint.angleZ, -0.68, 0.68);
+        joint.pivot.rotation.x = joint.angleX;
+        joint.pivot.rotation.z = joint.angleZ;
+      }
     }
   }
 
-  private buildArm(parent: THREE.Group, metal: THREE.Material, leather: THREE.Material): void {
-    const upper = this.mesh(new THREE.CylinderGeometry(0.12, 0.145, 0.5, 8), leather);
-    upper.position.y = -0.22;
-    parent.add(upper);
-    const vambrace = this.mesh(new THREE.CylinderGeometry(0.1, 0.13, 0.46, 8), metal);
-    vambrace.position.set(0, -0.62, -0.02);
-    parent.add(vambrace);
-    const hand = this.mesh(new THREE.BoxGeometry(0.2, 0.18, 0.2), leather);
-    hand.position.y = -0.9;
-    parent.add(hand);
+  private updateFace(
+    delta: number,
+    state: KnightVisualState,
+    turnRate: number,
+    speedRatio: number,
+    baseX: number,
+    baseY: number,
+    baseZ: number,
+    settle: number,
+  ): void {
+    this.blinkTimer -= delta;
+    if (this.blinkTimer <= 0) this.blinkTimer = 2.2 + Math.random() * 2.8;
+    const blink = this.blinkTimer < 0.13 ? Math.sin((this.blinkTimer / 0.13) * Math.PI) : 0;
+    this.eyeMaterial.emissiveIntensity = THREE.MathUtils.lerp(0.38, 0.03, Math.abs(blink));
+
+    this.gazeTimer -= delta;
+    if (this.gazeTimer <= 0) {
+      this.gazeTimer = 1.7 + Math.random() * 2.4;
+      this.gazeTarget = (Math.random() - 0.5) * 0.22;
+    }
+    const combatFocus = state !== 'idle' && state !== 'walk' && state !== 'run' ? 0 : this.gazeTarget;
+    const idleTilt = state === 'idle' ? Math.sin(this.time * 0.55) * 0.025 : 0;
+    const runSet = state === 'run' ? -0.04 * speedRatio : 0;
+    this.headPivot.rotation.x = THREE.MathUtils.lerp(this.headPivot.rotation.x, baseX + runSet, settle);
+    this.headPivot.rotation.y = THREE.MathUtils.lerp(
+      this.headPivot.rotation.y,
+      baseY + turnRate * 0.022 + combatFocus,
+      settle,
+    );
+    this.headPivot.rotation.z = THREE.MathUtils.lerp(this.headPivot.rotation.z, baseZ + idleTilt, settle);
   }
 
-  private buildLeg(parent: THREE.Group, metal: THREE.Material, darkMetal: THREE.Material): void {
-    const thigh = this.mesh(new THREE.CylinderGeometry(0.135, 0.17, 0.52, 8), metal);
-    thigh.position.y = -0.25;
+  private buildArm(
+    parent: THREE.Group,
+    forearmPivot: THREE.Group,
+    metal: THREE.Material,
+    leather: THREE.Material,
+    side: number,
+  ): void {
+    const upper = this.mesh(new THREE.CylinderGeometry(0.1, 0.125, 0.45, 9), leather);
+    upper.position.y = -0.2;
+    parent.add(upper);
+    forearmPivot.position.set(0, -0.43, -0.01);
+    parent.add(forearmPivot);
+    const vambrace = this.mesh(new THREE.CylinderGeometry(0.085, 0.112, 0.42, 9), metal);
+    vambrace.position.y = -0.19;
+    forearmPivot.add(vambrace);
+    const hand = this.mesh(new THREE.SphereGeometry(0.105, 10, 8), leather);
+    hand.scale.set(0.85, 1.05, 0.9);
+    hand.position.y = -0.43;
+    forearmPivot.add(hand);
+    parent.rotation.z = side * -0.025;
+  }
+
+  private buildLeg(
+    parent: THREE.Group,
+    shinPivot: THREE.Group,
+    metal: THREE.Material,
+    darkMetal: THREE.Material,
+    side: number,
+  ): void {
+    const thigh = this.mesh(new THREE.CylinderGeometry(0.115, 0.15, 0.5, 9), metal);
+    thigh.position.y = -0.23;
     parent.add(thigh);
-    const greave = this.mesh(new THREE.BoxGeometry(0.26, 0.5, 0.29), darkMetal);
-    greave.position.set(0, -0.68, -0.025);
-    parent.add(greave);
-    const boot = this.mesh(new THREE.BoxGeometry(0.28, 0.18, 0.42), darkMetal);
-    boot.position.set(0, -0.99, -0.08);
-    parent.add(boot);
+    shinPivot.position.set(0, -0.49, -0.015);
+    parent.add(shinPivot);
+    const greave = this.mesh(new THREE.BoxGeometry(0.22, 0.46, 0.25), darkMetal);
+    greave.position.y = -0.22;
+    shinPivot.add(greave);
+    const knee = this.mesh(new THREE.DodecahedronGeometry(0.14, 0), metal);
+    knee.scale.set(1.02, 0.72, 0.7);
+    knee.position.set(0, 0.02, -0.14);
+    shinPivot.add(knee);
+    const boot = this.mesh(new THREE.BoxGeometry(0.24, 0.16, 0.38), darkMetal);
+    boot.position.set(0, -0.5, -0.07);
+    shinPivot.add(boot);
+    parent.rotation.z = side * 0.01;
   }
 
   private buildSword(
@@ -366,20 +716,20 @@ export class AshenKnightVisual {
     ember: THREE.Material,
   ): THREE.Group {
     const sword = new THREE.Group();
-    const blade = this.mesh(new THREE.BoxGeometry(0.095, 1.42, 0.035), metal);
-    blade.position.y = -0.46;
+    const blade = this.mesh(new THREE.BoxGeometry(0.088, 1.38, 0.033), metal);
+    blade.position.y = -0.45;
     sword.add(blade);
-    const fuller = this.mesh(new THREE.BoxGeometry(0.018, 1.18, 0.045), edge);
-    fuller.position.set(0, -0.43, -0.005);
+    const fuller = this.mesh(new THREE.BoxGeometry(0.016, 1.14, 0.042), edge);
+    fuller.position.set(0, -0.42, -0.005);
     sword.add(fuller);
-    const guard = this.mesh(new THREE.BoxGeometry(0.58, 0.075, 0.095), ember);
-    guard.position.y = 0.28;
+    const guard = this.mesh(new THREE.BoxGeometry(0.54, 0.07, 0.09), ember);
+    guard.position.y = 0.27;
     sword.add(guard);
-    const grip = this.mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.38, 8), leather);
-    grip.position.y = 0.5;
+    const grip = this.mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.36, 8), leather);
+    grip.position.y = 0.48;
     sword.add(grip);
-    const pommel = this.mesh(new THREE.OctahedronGeometry(0.11, 0), ember);
-    pommel.position.y = 0.74;
+    const pommel = this.mesh(new THREE.OctahedronGeometry(0.1, 0), ember);
+    pommel.position.y = 0.7;
     sword.add(pommel);
     return sword;
   }
