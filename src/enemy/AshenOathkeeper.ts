@@ -163,6 +163,7 @@ export class AshenOathkeeper implements BossEnemy {
   private mechanicDanger = false;
   private safeLane = 0;
   private teleported = false;
+  private highContrastTelegraphs = false;
 
   constructor(
     scene: THREE.Scene,
@@ -282,6 +283,22 @@ export class AshenOathkeeper implements BossEnemy {
     this.safeSigil.position.set(0, 1.245, ARENA_CENTER.z);
     this.safeSigil.visible = false;
     this.arenaFx.add(this.safeSigil);
+  }
+
+
+  setHighContrastTelegraphs(enabled: boolean): void {
+    this.highContrastTelegraphs = enabled;
+    const danger = enabled ? 0xff3f35 : 0xd14f43;
+    const safe = enabled ? 0x54d8ff : 0xd8c7a1;
+    (this.tellRing.material as THREE.MeshBasicMaterial).color.setHex(danger);
+    (this.arenaRing.material as THREE.MeshBasicMaterial).color.setHex(danger);
+    (this.safeSigil.material as THREE.MeshBasicMaterial).color.setHex(safe);
+    for (const line of this.lineTelegraphs) {
+      (line.material as THREE.MeshBasicMaterial).color.setHex(danger);
+    }
+    for (const circle of this.strikeTelegraphs) {
+      (circle.material as THREE.MeshBasicMaterial).color.setHex(danger);
+    }
   }
 
   activateEncounter(): void {
@@ -1283,7 +1300,9 @@ export class AshenOathkeeper implements BossEnemy {
     const windupRatio = this.state === 'windup'
       ? THREE.MathUtils.clamp(this.stateTimer / ATTACKS[this.attack].windup, 0, 1)
       : this.state === 'active' ? 1 : 0;
-    const activeOpacity = this.state === 'active' ? 0.78 : 0.08 + windupRatio * 0.34;
+    const activeOpacity = this.state === 'active'
+      ? (this.highContrastTelegraphs ? 0.98 : 0.78)
+      : (this.highContrastTelegraphs ? 0.28 + windupRatio * 0.54 : 0.08 + windupRatio * 0.34);
 
     if (this.state !== 'windup' && this.state !== 'active') return;
     if (this.attack === 'pursuitThrust' || this.attack === 'mirrorPunish') {
@@ -1320,7 +1339,9 @@ export class AshenOathkeeper implements BossEnemy {
       (this.arenaRing.material as THREE.MeshBasicMaterial).opacity = activeOpacity * 0.72;
       this.safeSigil.visible = true;
       this.safeSigil.rotation.z = -this.safeLane * Math.PI / 2 + Math.PI * 0.29;
-      (this.safeSigil.material as THREE.MeshBasicMaterial).opacity = 0.22 + windupRatio * 0.65;
+      (this.safeSigil.material as THREE.MeshBasicMaterial).opacity = this.highContrastTelegraphs
+        ? 0.48 + windupRatio * 0.5
+        : 0.22 + windupRatio * 0.65;
       for (let index = 0; index < 4; index += 1) {
         if (index === this.safeLane) continue;
         const angle = index * Math.PI / 2;

@@ -60,6 +60,7 @@ export class GameHud {
   private readonly endingQuote: HTMLElement;
   private readonly endingCredits: HTMLElement;
   private readonly endingCreditRoll: HTMLElement;
+  private readonly endingActions: HTMLElement;
   private currentArea = '';
   private bossActive = false;
   private debugVisible = false;
@@ -121,6 +122,7 @@ export class GameHud {
     this.endingQuote = this.requireElement('ending-quote');
     this.endingCredits = this.requireElement('ending-credits');
     this.endingCreditRoll = this.requireElement('ending-credit-roll');
+    this.endingActions = this.requireElement('ending-actions');
   }
 
   reveal(): void {
@@ -272,7 +274,10 @@ export class GameHud {
   private setEnding(snapshot: EndingSnapshot): void {
     this.endingPanel.classList.toggle('is-hidden', !snapshot.active);
     this.root.classList.toggle('ending-active', snapshot.active);
-    if (!snapshot.active || !snapshot.choice) return;
+    if (!snapshot.active || !snapshot.choice) {
+      this.endingActions.classList.add('is-hidden');
+      return;
+    }
     const inherit = snapshot.choice === 'inherit';
     this.endingPanel.classList.toggle('ending-inherit', inherit);
     this.endingPanel.classList.toggle('ending-sever', !inherit);
@@ -281,8 +286,12 @@ export class GameHud {
     this.endingSubtitle.textContent = snapshot.subtitle;
     this.endingQuote.textContent = snapshot.quote;
     const progress = clamp01(snapshot.creditsProgress);
-    this.endingCredits.style.opacity = String(clamp01((progress - 0.02) * 3.2));
-    this.endingCreditRoll.style.transform = `translate(-50%, ${THREELESS_LERP(34, -38, progress)}vh)`;
+    const reducedMotion = document.documentElement.classList.contains('reduced-motion');
+    this.endingCredits.style.opacity = reducedMotion ? '0' : String(clamp01((progress - 0.02) * 3.2));
+    this.endingCreditRoll.style.transform = reducedMotion
+      ? 'translate(-50%, 0)'
+      : `translate(-50%, ${THREELESS_LERP(34, -38, progress)}vh)`;
+    this.endingActions.classList.toggle('is-hidden', progress < (reducedMotion ? 0.18 : 0.88));
   }
 
   setPointerLocked(locked: boolean): void {

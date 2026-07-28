@@ -192,6 +192,7 @@ export class GatewardenVarkan implements BossEnemy {
   private shieldBroken = false;
   private phaseBreakTriggered = false;
   private presentationEvent: BossPresentationEvent | null = null;
+  private highContrastTelegraphs = false;
   private shieldDebrisMesh: THREE.Mesh | null = null;
   private shieldDebrisBody: RigidBody | null = null;
   private shieldDebrisLife = 0;
@@ -380,6 +381,13 @@ export class GatewardenVarkan implements BossEnemy {
       this.rig.add(ember);
       this.oathEmbers.push(ember);
     }
+  }
+
+
+  setHighContrastTelegraphs(enabled: boolean): void {
+    this.highContrastTelegraphs = enabled;
+    const scarMaterial = this.groundScar.material as THREE.MeshBasicMaterial;
+    scarMaterial.color.setHex(enabled ? 0xfff0a8 : 0xd96b32);
   }
 
   activateEncounter(): void {
@@ -815,14 +823,16 @@ export class GatewardenVarkan implements BossEnemy {
       const ratio = THREE.MathUtils.clamp(this.stateTimer / profile.windup, 0, 1);
       const radius = this.attack === 'shieldSlam' || this.attack === 'leapSlam' ? 3.2 : 1.2;
       this.tellRing.scale.setScalar(THREE.MathUtils.lerp(radius, 0.6, ratio));
-      tellMaterial.opacity = 0.15 + ratio * 0.72;
-      tellMaterial.color.setHex(this.attack === 'oathfireSweep' || this.phase === 2 ? 0xe15926 : 0xd5a261);
+      tellMaterial.opacity = this.highContrastTelegraphs ? 0.32 + ratio * 0.66 : 0.15 + ratio * 0.72;
+      tellMaterial.color.setHex(this.highContrastTelegraphs
+        ? (this.attack === 'oathfireSweep' || this.phase === 2 ? 0xff5a2f : 0xffe08a)
+        : (this.attack === 'oathfireSweep' || this.phase === 2 ? 0xe15926 : 0xd5a261));
       this.tellRing.visible = true;
     } else if (this.state === 'phaseBreak') {
       this.tellRing.visible = true;
       this.tellRing.scale.setScalar(1.4 + this.stateTimer * 1.2);
-      tellMaterial.opacity = Math.max(0, 0.8 - this.stateTimer * 0.22);
-      tellMaterial.color.setHex(0xf06b28);
+      tellMaterial.opacity = Math.max(0, (this.highContrastTelegraphs ? 1 : 0.8) - this.stateTimer * 0.22);
+      tellMaterial.color.setHex(this.highContrastTelegraphs ? 0xff5a2f : 0xf06b28);
     } else {
       tellMaterial.opacity = Math.max(0, tellMaterial.opacity - delta * 5);
       if (tellMaterial.opacity <= 0.01) this.tellRing.visible = false;

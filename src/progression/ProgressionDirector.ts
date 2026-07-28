@@ -476,6 +476,7 @@ export class ProgressionDirector {
   private beginEnding(choice: EndingChoice): void {
     this.endingChoice = choice;
     this.endingsSeen.add(choice);
+    this.saveRequested = true;
     this.endingTimer = 0;
     this.interaction = null;
     this.notice = null;

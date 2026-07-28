@@ -252,6 +252,10 @@ export class CombatDirector {
     this.effects.update(delta);
   }
 
+  setHighContrastTelegraphs(enabled: boolean): void {
+    for (const boss of this.bosses) boss.setHighContrastTelegraphs(enabled);
+  }
+
   getLockTargetPosition(): THREE.Vector3 | null {
     return this.lockedEnemy?.getLockSnapshot().position ?? null;
   }

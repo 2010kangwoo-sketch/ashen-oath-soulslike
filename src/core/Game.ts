@@ -45,6 +45,8 @@ export class Game {
   private combat!: CombatDirector;
   private progression!: ProgressionDirector;
   private menu!: GameMenu;
+  private endingTitleButton!: HTMLButtonElement;
+  private endingNewGameButton!: HTMLButtonElement;
   private moon!: THREE.DirectionalLight;
   private settings: GameSettings = DEFAULT_GAME_SETTINGS;
   private animationFrame = 0;
@@ -59,6 +61,8 @@ export class Game {
   private adaptivePixelScale = 1;
   private lowFpsDuration = 0;
   private highFpsDuration = 0;
+  private contextLost = false;
+  private readonly debugEnabled = new URLSearchParams(window.location.search).has('debug');
 
   constructor(private readonly canvas: HTMLCanvasElement) {}
 
@@ -89,6 +93,8 @@ export class Game {
       onReturnToTitle: () => this.returnToTitle(),
       onSettingsChanged: (settings) => this.applySettings(settings),
     });
+    this.endingTitleButton = this.requireButton('ending-title-button');
+    this.endingNewGameButton = this.requireButton('ending-new-game-button');
     this.settings = this.settingsStore.load();
     this.applySettings(this.settings);
     this.resizeRenderer();
@@ -126,9 +132,15 @@ export class Game {
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('beforeunload', this.onBeforeUnload);
+    window.removeEventListener('pagehide', this.onPageHide);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.canvas.removeEventListener('contextmenu', this.onContextMenu);
     this.canvas.removeEventListener('pointerdown', this.onAudioUnlock);
+    this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
+    this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
     window.removeEventListener('keydown', this.onAudioUnlock);
+    this.endingTitleButton?.removeEventListener('click', this.onEndingReturnToTitle);
+    this.endingNewGameButton?.removeEventListener('click', this.onEndingNewGame);
   }
 
   private createRenderer(): void {
@@ -185,9 +197,15 @@ export class Game {
     window.addEventListener('resize', this.onResize);
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('beforeunload', this.onBeforeUnload);
+    window.addEventListener('pagehide', this.onPageHide);
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
     this.canvas.addEventListener('contextmenu', this.onContextMenu);
     this.canvas.addEventListener('pointerdown', this.onAudioUnlock, { once: true });
+    this.canvas.addEventListener('webglcontextlost', this.onContextLost, false);
+    this.canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
     window.addEventListener('keydown', this.onAudioUnlock, { once: true });
+    this.endingTitleButton.addEventListener('click', this.onEndingReturnToTitle);
+    this.endingNewGameButton.addEventListener('click', this.onEndingNewGame);
   }
 
   private readonly onAudioUnlock = (): void => {
@@ -221,9 +239,15 @@ export class Game {
     this.settingsStore.save(settings);
     this.menu?.setSettings(settings);
     this.audio.setMasterVolume(settings.masterVolume);
-    this.cameraRig?.setControlSettings(settings.mouseSensitivity, settings.cameraShake);
+    const effectiveShake = settings.reducedMotion ? settings.cameraShake * 0.18 : settings.cameraShake;
+    this.cameraRig?.setControlSettings(settings.mouseSensitivity, effectiveShake);
     this.pipeline?.setQuality(settings.quality);
+    this.pipeline?.setAccessibility(settings.reducedMotion, settings.highContrastTelegraphs);
+    this.combat?.setHighContrastTelegraphs(settings.highContrastTelegraphs);
     this.hud.setControlHelpVisible(settings.showControlHelp);
+    document.documentElement.style.setProperty('--ui-scale', String(settings.uiScale));
+    document.documentElement.classList.toggle('reduced-motion', settings.reducedMotion);
+    document.documentElement.classList.toggle('high-contrast-telegraphs', settings.highContrastTelegraphs);
     if (this.renderer) {
       this.renderer.shadowMap.type = settings.quality === 'performance'
         ? THREE.PCFShadowMap
@@ -253,7 +277,7 @@ export class Game {
       return;
     }
     if (!this.gameActive || this.paused) return;
-    if (event.code === 'F8' && !this.progression.isEndingLocked()) {
+    if (this.debugEnabled && event.code === 'F8' && !this.progression.isEndingLocked()) {
       this.progression.startNewGame(this.player, this.combat);
       this.playTimeSeconds = 0;
       this.lastSaveFingerprint = '';
@@ -263,7 +287,7 @@ export class Game {
       const next = !this.settings.showControlHelp;
       this.applySettings({ ...this.settings, showControlHelp: next });
     }
-    if (event.code === 'F3') {
+    if (this.debugEnabled && event.code === 'F3') {
       event.preventDefault();
       this.hud.toggleDebug();
     }
@@ -273,8 +297,46 @@ export class Game {
     this.saveNow(false, true);
   };
 
+  private readonly onPageHide = (): void => {
+    this.saveNow(false, true);
+  };
+
+  private readonly onVisibilityChange = (): void => {
+    if (!document.hidden || !this.gameActive) return;
+    this.saveNow(false, true);
+    if (!this.paused && !this.progression.isEndingLocked()) this.pauseGame();
+  };
+
   private readonly onContextMenu = (event: MouseEvent): void => {
     event.preventDefault();
+  };
+
+  private readonly onContextLost = (event: Event): void => {
+    event.preventDefault();
+    if (this.contextLost) return;
+    this.contextLost = true;
+    this.saveNow(false, true);
+    this.paused = true;
+    this.input?.setEnabled(false);
+    this.cameraRig?.setEnabled(false);
+    this.audio.setDucked(true);
+    const fatal = document.getElementById('fatal-error');
+    fatal?.classList.remove('is-hidden');
+    if (fatal) fatal.textContent = '그래픽 장치 연결이 일시적으로 끊겼습니다. 안전하게 저장했으며, 복구되면 게임을 다시 불러옵니다.';
+  };
+
+  private readonly onContextRestored = (): void => {
+    window.location.reload();
+  };
+
+  private readonly onEndingReturnToTitle = (): void => {
+    this.saveNow(false, true);
+    this.endingPresented = false;
+    this.returnToTitle();
+  };
+
+  private readonly onEndingNewGame = (): void => {
+    this.startNewGame();
   };
 
   private startNewGame(): void {
@@ -312,6 +374,8 @@ export class Game {
     this.input.setEnabled(true);
     this.cameraRig.setEnabled(true);
     this.audio.setDucked(false);
+    const fatal = document.getElementById('fatal-error');
+    fatal?.classList.add('is-hidden');
     this.clock.getDelta();
   }
 
@@ -357,7 +421,7 @@ export class Game {
   }
 
   private saveNow(showIndicator: boolean, force = false): void {
-    if (!this.gameActive || this.progression?.isEndingLocked()) return;
+    if (!this.gameActive) return;
     const payload = {
       playTimeSeconds: this.playTimeSeconds,
       progression: this.progression.getSaveState(),
@@ -417,8 +481,11 @@ export class Game {
     if (this.disposed) return;
     this.animationFrame = requestAnimationFrame(this.animate);
 
+    if (this.contextLost) return;
+
     const delta = Math.min(this.clock.getDelta(), 0.1);
     this.input.update();
+    this.menu.update();
 
     if (!this.gameActive || this.paused) {
       const idleDelta = Math.min(delta, 1 / 30);
@@ -508,4 +575,10 @@ export class Game {
     this.updateAutosave(delta);
     this.pipeline.render(delta);
   };
+
+  private requireButton(id: string): HTMLButtonElement {
+    const element = document.getElementById(id);
+    if (!(element instanceof HTMLButtonElement)) throw new Error(`Required button is missing: #${id}`);
+    return element;
+  }
 }

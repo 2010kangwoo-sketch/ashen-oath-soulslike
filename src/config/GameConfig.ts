@@ -1,6 +1,6 @@
 export const GAME_CONFIG = {
   title: 'Ashen Oath',
-  pass: 9,
+  pass: 10,
   renderer: {
     maxPixelRatio: 1.65,
     shadowMapSize: 2048,

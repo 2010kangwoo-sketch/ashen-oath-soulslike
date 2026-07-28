@@ -140,6 +140,7 @@ export class BellDevouringWidow implements BossEnemy {
   private mechanicHint = '';
   private mechanicProgress = 0;
   private mechanicDanger = false;
+  private highContrastTelegraphs = false;
 
   constructor(
     scene: THREE.Scene,
@@ -238,6 +239,18 @@ export class BellDevouringWidow implements BossEnemy {
     this.arenaRing.position.set(0, 1.25, -151.5);
     this.arenaRing.visible = false;
     this.arenaFx.add(this.arenaRing);
+  }
+
+
+  setHighContrastTelegraphs(enabled: boolean): void {
+    this.highContrastTelegraphs = enabled;
+    const danger = enabled ? 0xff4f38 : 0xa63527;
+    (this.dropShadow.material as THREE.MeshBasicMaterial).color.setHex(danger);
+    (this.ruptureDisc.material as THREE.MeshBasicMaterial).color.setHex(danger);
+    (this.arenaRing.material as THREE.MeshBasicMaterial).color.setHex(enabled ? 0xffe089 : danger);
+    for (const lane of this.laneTelegraphs) {
+      (lane.material as THREE.MeshBasicMaterial).color.setHex(enabled ? 0xffffff : 0xd7b6a2);
+    }
   }
 
   activateEncounter(): void {
@@ -964,7 +977,9 @@ export class BellDevouringWidow implements BossEnemy {
       this.dropShadow.position.z = this.targetAnchor.z;
       const scale = this.attack === 'ceilingDrop' ? 1.2 + windupRatio * 3.3 : 1.1 + windupRatio * 1.7;
       this.dropShadow.scale.setScalar(scale);
-      (this.dropShadow.material as THREE.MeshBasicMaterial).opacity = 0.12 + windupRatio * 0.45;
+      (this.dropShadow.material as THREE.MeshBasicMaterial).opacity = this.highContrastTelegraphs
+        ? 0.28 + windupRatio * 0.62
+        : 0.12 + windupRatio * 0.45;
       this.dropShadow.rotation.z += 0.012;
     }
 
@@ -974,7 +989,9 @@ export class BellDevouringWidow implements BossEnemy {
       if (!lanesVisible) return;
       lane.rotation.y = (index - 2) * 0.48 + (this.phase === 2 ? 0.18 : 0);
       const material = lane.material as THREE.MeshBasicMaterial;
-      material.opacity = this.state === 'active' ? 0.72 : 0.08 + windupRatio * 0.28;
+      material.opacity = this.state === 'active'
+        ? (this.highContrastTelegraphs ? 0.96 : 0.72)
+        : (this.highContrastTelegraphs ? 0.24 + windupRatio * 0.48 : 0.08 + windupRatio * 0.28);
       lane.scale.x = 0.45 + windupRatio * 0.7;
     });
 
@@ -982,7 +999,9 @@ export class BellDevouringWidow implements BossEnemy {
     this.ruptureDisc.visible = ruptureVisible;
     this.arenaRing.visible = ruptureVisible;
     if (ruptureVisible) {
-      const opacity = this.state === 'active' ? 0.7 : 0.08 + windupRatio * 0.32;
+      const opacity = this.state === 'active'
+        ? (this.highContrastTelegraphs ? 0.96 : 0.7)
+        : (this.highContrastTelegraphs ? 0.26 + windupRatio * 0.5 : 0.08 + windupRatio * 0.32);
       (this.ruptureDisc.material as THREE.MeshBasicMaterial).opacity = opacity;
       (this.arenaRing.material as THREE.MeshBasicMaterial).opacity = opacity * 0.75;
       this.ruptureDisc.rotation.z -= 0.018;

@@ -6,6 +6,9 @@ export interface GameSettings {
   readonly cameraShake: number;
   readonly mouseSensitivity: number;
   readonly showControlHelp: boolean;
+  readonly reducedMotion: boolean;
+  readonly highContrastTelegraphs: boolean;
+  readonly uiScale: number;
 }
 
 const SETTINGS_KEY = 'ashen-oath.settings.v1';
@@ -16,6 +19,9 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   cameraShake: 0.78,
   mouseSensitivity: 1,
   showControlHelp: true,
+  reducedMotion: false,
+  highContrastTelegraphs: false,
+  uiScale: 1,
 };
 
 export class GameSettingsStore {
@@ -44,13 +50,21 @@ export function sanitizeSettings(settings: Partial<GameSettings>): GameSettings 
     : 'balanced';
   return {
     quality,
-    masterVolume: clamp(settings.masterVolume ?? DEFAULT_GAME_SETTINGS.masterVolume, 0, 1),
-    cameraShake: clamp(settings.cameraShake ?? DEFAULT_GAME_SETTINGS.cameraShake, 0, 1),
-    mouseSensitivity: clamp(settings.mouseSensitivity ?? DEFAULT_GAME_SETTINGS.mouseSensitivity, 0.5, 1.6),
-    showControlHelp: settings.showControlHelp ?? DEFAULT_GAME_SETTINGS.showControlHelp,
+    masterVolume: clamp(settings.masterVolume, 0, 1, DEFAULT_GAME_SETTINGS.masterVolume),
+    cameraShake: clamp(settings.cameraShake, 0, 1, DEFAULT_GAME_SETTINGS.cameraShake),
+    mouseSensitivity: clamp(settings.mouseSensitivity, 0.5, 1.6, DEFAULT_GAME_SETTINGS.mouseSensitivity),
+    showControlHelp: booleanOr(settings.showControlHelp, DEFAULT_GAME_SETTINGS.showControlHelp),
+    reducedMotion: booleanOr(settings.reducedMotion, DEFAULT_GAME_SETTINGS.reducedMotion),
+    highContrastTelegraphs: booleanOr(settings.highContrastTelegraphs, DEFAULT_GAME_SETTINGS.highContrastTelegraphs),
+    uiScale: clamp(settings.uiScale, 0.9, 1.25, DEFAULT_GAME_SETTINGS.uiScale),
   };
 }
 
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, Number.isFinite(value) ? value : minimum));
+function clamp(value: unknown, minimum: number, maximum: number, fallback: number): number {
+  const safe = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  return Math.min(maximum, Math.max(minimum, safe));
+}
+
+function booleanOr(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
 }

@@ -10,4 +10,5 @@ export interface BossEnemy extends CombatEnemy {
   isDefeated(): boolean;
   getBossSnapshot(): BossSnapshot;
   consumePresentationEvent(): BossPresentationEvent | null;
+  setHighContrastTelegraphs(enabled: boolean): void;
 }

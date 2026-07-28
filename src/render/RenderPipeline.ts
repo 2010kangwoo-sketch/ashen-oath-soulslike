@@ -18,6 +18,8 @@ const CinematicShader = {
     mechanicDanger: { value: 0 },
     endingIntensity: { value: 0 },
     endingSever: { value: 0 },
+    motionScale: { value: 1 },
+    contrastBoost: { value: 0 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -35,6 +37,8 @@ const CinematicShader = {
     uniform float mechanicDanger;
     uniform float endingIntensity;
     uniform float endingSever;
+    uniform float motionScale;
+    uniform float contrastBoost;
     varying vec2 vUv;
 
     float hash(vec2 p) {
@@ -45,7 +49,7 @@ const CinematicShader = {
 
     void main() {
       vec2 centered = vUv * 2.0 - 1.0;
-      vec2 aberration = centered * (0.00035 * encounterIntensity + 0.0011 * mechanicDanger);
+      vec2 aberration = centered * (0.00035 * encounterIntensity + 0.0011 * mechanicDanger) * motionScale;
       vec3 base = texture2D(tDiffuse, vUv).rgb;
       vec3 color = vec3(
         texture2D(tDiffuse, vUv + aberration).r,
@@ -61,10 +65,12 @@ const CinematicShader = {
       vec3 endingCold = vec3(-0.035, -0.012, 0.038);
       color += mix(endingWarm, endingCold, endingSever) * endingIntensity;
       color = mix(color, vec3(dot(color, vec3(0.28, 0.62, 0.1))), endingIntensity * (0.18 + endingSever * 0.22));
+      color = (color - 0.5) * (1.0 + contrastBoost * (0.16 + mechanicDanger * 0.12)) + 0.5;
+      color += vec3(0.045, 0.015, -0.01) * contrastBoost * mechanicDanger;
       float vignette = smoothstep(1.35, 0.28, dot(centered, centered));
       color *= mix(1.0 - vignetteStrength - mechanicDanger * 0.08, 1.0, vignette);
       float grain = hash(vUv * vec2(1413.0, 911.0) + time * 0.07) - 0.5;
-      color += grain * (grainStrength + mechanicDanger * 0.008) * (0.35 + 0.65 * (1.0 - luma));
+      color += grain * (grainStrength + mechanicDanger * 0.008) * motionScale * (0.35 + 0.65 * (1.0 - luma));
       float letterbox = smoothstep(0.0, 0.035, min(vUv.y, 1.0 - vUv.y));
       float letterboxMix = clamp(letterbox + (1.0 - encounterIntensity), 0.0, 1.0);
       color *= mix(0.88, 1.0, letterboxMix);
@@ -86,6 +92,8 @@ export class RenderPipeline {
   private endingIntensity = 0;
   private endingSever = 0;
   private quality: QualityPreset = 'balanced';
+  private motionScale = 1;
+  private contrastBoost = 0;
 
   constructor(
     renderer: THREE.WebGLRenderer,
@@ -126,11 +134,18 @@ export class RenderPipeline {
     this.endingSever = choice === 'sever' ? 1 : 0;
   }
 
+  setAccessibility(reducedMotion: boolean, highContrastTelegraphs: boolean): void {
+    this.motionScale = reducedMotion ? 0.18 : 1;
+    this.contrastBoost = highContrastTelegraphs ? 1 : 0;
+    this.cinematicPass.uniforms['motionScale']!.value = this.motionScale;
+    this.cinematicPass.uniforms['contrastBoost']!.value = this.contrastBoost;
+  }
+
   render(delta: number): void {
     this.encounterIntensity += (this.encounterTarget - this.encounterIntensity) * (1 - Math.exp(-3.6 * delta));
     this.dangerIntensity += (this.dangerTarget - this.dangerIntensity) * (1 - Math.exp(-8 * delta));
     this.endingIntensity += (this.endingTarget - this.endingIntensity) * (1 - Math.exp(-1.35 * delta));
-    this.cinematicPass.uniforms['time']!.value += delta;
+    this.cinematicPass.uniforms['time']!.value += delta * this.motionScale;
     this.cinematicPass.uniforms['encounterIntensity']!.value = this.encounterIntensity;
     this.cinematicPass.uniforms['mechanicDanger']!.value = this.dangerIntensity;
     this.cinematicPass.uniforms['endingIntensity']!.value = this.endingIntensity;

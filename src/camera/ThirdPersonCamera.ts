@@ -10,6 +10,10 @@ export class ThirdPersonCamera {
   private readonly shoulder = new THREE.Vector3();
   private readonly cameraVector = new THREE.Vector3();
   private readonly velocityLookAhead = new THREE.Vector3();
+  private readonly toLock = new THREE.Vector3();
+  private readonly weightedLockTarget = new THREE.Vector3();
+  private readonly castOrigin = new THREE.Vector3();
+  private readonly collisionVector = new THREE.Vector3();
   private readonly planarForward = new THREE.Vector3(0, 0, -1);
   private readonly planarRight = new THREE.Vector3(1, 0, 0);
   private pointerLocked = false;
@@ -50,9 +54,9 @@ export class ThirdPersonCamera {
     this.consumeLook(delta, gamepadLook);
     this.lockBlend += ((lockTarget ? 1 : 0) - this.lockBlend) * (1 - Math.exp(-10 * delta));
     if (lockTarget) {
-      const toLock = lockTarget.clone().sub(target).setY(0);
-      if (toLock.lengthSq() > 0.001) {
-        const lockYaw = Math.atan2(-toLock.x, -toLock.z);
+      this.toLock.copy(lockTarget).sub(target).setY(0);
+      if (this.toLock.lengthSq() > 0.001) {
+        const lockYaw = Math.atan2(-this.toLock.x, -this.toLock.z);
         this.yaw = moveAngleTowards(this.yaw, lockYaw, GAME_CONFIG.camera.lockYawSharpness * delta);
       }
     }
@@ -66,11 +70,11 @@ export class ThirdPersonCamera {
     this.desiredTarget.copy(target).add(this.velocityLookAhead);
     let verticalLockSpan = 0;
     if (lockTarget) {
-      const weightedLockTarget = lockTarget.clone();
+      this.weightedLockTarget.copy(lockTarget);
       verticalLockSpan = Math.abs(lockTarget.y - target.y);
       const verticalWeight = THREE.MathUtils.clamp(0.4 - verticalLockSpan * 0.014, 0.24, 0.4);
-      weightedLockTarget.y = THREE.MathUtils.lerp(target.y, lockTarget.y, verticalWeight);
-      this.desiredTarget.lerp(weightedLockTarget, GAME_CONFIG.camera.lockTargetWeight * this.lockBlend);
+      this.weightedLockTarget.y = THREE.MathUtils.lerp(target.y, lockTarget.y, verticalWeight);
+      this.desiredTarget.lerp(this.weightedLockTarget, GAME_CONFIG.camera.lockTargetWeight * this.lockBlend);
     }
     const targetAlpha = 1 - Math.exp(-GAME_CONFIG.camera.targetSharpness * delta);
     if (!this.initialized) {
@@ -91,13 +95,13 @@ export class ThirdPersonCamera {
     this.shoulder.copy(this.planarRight).multiplyScalar(GAME_CONFIG.camera.shoulderOffset);
     this.desiredPosition.copy(this.smoothedTarget).add(this.shoulder).add(this.cameraVector);
 
-    const castOrigin = this.smoothedTarget.clone().add(this.shoulder.multiplyScalar(0.35));
-    const collisionVector = this.desiredPosition.clone().sub(castOrigin);
-    const fullDistance = collisionVector.length();
+    this.castOrigin.copy(this.smoothedTarget).add(this.shoulder.multiplyScalar(0.35));
+    this.collisionVector.copy(this.desiredPosition).sub(this.castOrigin);
+    const fullDistance = this.collisionVector.length();
     let safeDistance = fullDistance;
     if (fullDistance > 0.001) {
-      collisionVector.normalize();
-      this.raycaster.set(castOrigin, collisionVector);
+      this.collisionVector.normalize();
+      this.raycaster.set(this.castOrigin, this.collisionVector);
       this.raycaster.near = 0.2;
       this.raycaster.far = fullDistance;
       const hit = this.raycaster.intersectObjects(this.blockers, true)[0];
@@ -113,7 +117,11 @@ export class ThirdPersonCamera {
       ? GAME_CONFIG.camera.collisionInSharpness
       : GAME_CONFIG.camera.collisionOutSharpness;
     this.collisionDistance += (safeDistance - this.collisionDistance) * (1 - Math.exp(-collisionSharpness * delta));
-    this.desiredPosition.copy(castOrigin).addScaledVector(collisionVector.normalize(), this.collisionDistance);
+    if (fullDistance > 0.001) {
+      this.desiredPosition.copy(this.castOrigin).addScaledVector(this.collisionVector, this.collisionDistance);
+    } else {
+      this.desiredPosition.copy(this.castOrigin);
+    }
 
     const positionAlpha = 1 - Math.exp(-GAME_CONFIG.camera.positionSharpness * delta);
     if (this.camera.position.lengthSq() === 0) this.camera.position.copy(this.desiredPosition);
@@ -202,7 +210,8 @@ export class ThirdPersonCamera {
   private readonly onClick = (): void => {
     if (!this.enabled) return;
     if (!this.pointerLocked && document.pointerLockElement === null) {
-      void this.canvas.requestPointerLock();
+      const requestPointerLock = this.canvas.requestPointerLock?.bind(this.canvas);
+      if (requestPointerLock) void requestPointerLock();
     }
   };
 
