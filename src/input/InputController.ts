@@ -1,11 +1,21 @@
 export type MoveAxes = Readonly<{ horizontal: number; vertical: number }>;
 export type LookAxes = Readonly<{ horizontal: number; vertical: number }>;
-export type CombatAction = 'lightAttack' | 'heavyAttack' | 'dodge' | 'lockOn' | 'parry' | 'interact' | 'heal';
+export type CombatAction =
+  | 'lightAttack'
+  | 'heavyAttack'
+  | 'dodge'
+  | 'lockOn'
+  | 'parry'
+  | 'interact'
+  | 'heal'
+  | 'skillQ'
+  | 'skillE'
+  | 'skillR';
 
 const BLOCKED_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-  'ShiftLeft', 'ShiftRight', 'Space', 'KeyQ', 'KeyF', 'KeyE', 'KeyR',
+  'ShiftLeft', 'ShiftRight', 'Space', 'Tab', 'KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyC', 'Digit1',
 ]);
 
 export class InputController {
@@ -62,6 +72,9 @@ export class InputController {
       this.captureGamepadPress(gamepad, 6, 'parry');
       this.captureGamepadPress(gamepad, 0, 'interact');
       this.captureGamepadPress(gamepad, 12, 'heal');
+      this.captureGamepadPress(gamepad, 5, 'skillQ');
+      this.captureGamepadPress(gamepad, 7, 'skillE');
+      this.captureGamepadPress(gamepad, 15, 'skillR');
       this.gamepadHeavyHeld = Boolean(gamepad.buttons[3]?.pressed);
       gamepadGuard = Boolean(gamepad.buttons[4]?.pressed);
     } else {
@@ -122,10 +135,13 @@ export class InputController {
     this.held.add(event.code);
     if (!firstPress) return;
     if (event.code === 'Space') this.pressedActions.add('dodge');
-    if (event.code === 'KeyQ') this.pressedActions.add('lockOn');
-    if (event.code === 'KeyF') this.pressedActions.add('parry');
-    if (event.code === 'KeyE') this.pressedActions.add('interact');
-    if (event.code === 'KeyR') this.pressedActions.add('heal');
+    if (event.code === 'Tab') this.pressedActions.add('lockOn');
+    if (event.code === 'KeyC') this.pressedActions.add('parry');
+    if (event.code === 'KeyF') this.pressedActions.add('interact');
+    if (event.code === 'Digit1') this.pressedActions.add('heal');
+    if (event.code === 'KeyQ') this.pressedActions.add('skillQ');
+    if (event.code === 'KeyE') this.pressedActions.add('skillE');
+    if (event.code === 'KeyR') this.pressedActions.add('skillR');
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
@@ -141,6 +157,7 @@ export class InputController {
       if (heavyModifier) this.mouseHeavyHeld = true;
       this.pressedActions.add(heavyModifier ? 'heavyAttack' : 'lightAttack');
     }
+    if (event.button === 1) this.pressedActions.add('lockOn');
     if (event.button === 2) this.mouseGuarding = true;
   };
 

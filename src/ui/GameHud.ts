@@ -1,5 +1,5 @@
 import type { Camera } from 'three';
-import type { BossPresentationEvent, BossSnapshot, LockTargetSnapshot } from '../combat/CombatTypes';
+import type { BossPresentationEvent, BossSnapshot, LockTargetSnapshot, SkillCooldownEntry } from '../combat/CombatTypes';
 import type { PlayerMotionState } from '../player/PlayerController';
 import type { EndingSnapshot, ProgressionSnapshot } from '../progression/ProgressionDirector';
 import type { FrameStats } from '../core/PerformanceGovernor';
@@ -60,6 +60,10 @@ export class GameHud {
   private readonly raidMechanicName: HTMLElement;
   private readonly raidMechanicHint: HTMLElement;
   private readonly raidMechanicFill: HTMLElement;
+  private readonly bossCounterWindow: HTMLElement;
+  private readonly bossCounterFill: HTMLElement;
+  private readonly bossAddCount: HTMLElement;
+  private readonly skillSlots: Record<string, { root: HTMLElement; cooldown: HTMLElement; time: HTMLElement }>;
   private readonly endingPanel: HTMLElement;
   private readonly endingKicker: HTMLElement;
   private readonly endingTitle: HTMLElement;
@@ -128,6 +132,26 @@ export class GameHud {
     this.raidMechanicName = this.requireElement('raid-mechanic-name');
     this.raidMechanicHint = this.requireElement('raid-mechanic-hint');
     this.raidMechanicFill = this.requireElement('raid-mechanic-fill');
+    this.bossCounterWindow = this.requireElement('boss-counter-window');
+    this.bossCounterFill = this.requireElement('boss-counter-fill');
+    this.bossAddCount = this.requireElement('boss-add-count');
+    this.skillSlots = {
+      ashStep: {
+        root: this.requireElement('skill-ash-step'),
+        cooldown: this.requireElement('skill-ash-step-cooldown'),
+        time: this.requireElement('skill-ash-step-time'),
+      },
+      oathCounter: {
+        root: this.requireElement('skill-oath-counter'),
+        cooldown: this.requireElement('skill-oath-counter-cooldown'),
+        time: this.requireElement('skill-oath-counter-time'),
+      },
+      cinderArc: {
+        root: this.requireElement('skill-cinder-arc'),
+        cooldown: this.requireElement('skill-cinder-arc-cooldown'),
+        time: this.requireElement('skill-cinder-arc-time'),
+      },
+    };
     this.endingPanel = this.requireElement('ending-panel');
     this.endingKicker = this.requireElement('ending-kicker');
     this.endingTitle = this.requireElement('ending-title');
@@ -186,6 +210,9 @@ export class GameHud {
       light3: '연계 마무리',
       heavyCharge: '강공격 모으기',
       heavy: '강공격',
+      ashStep: '재의 보법',
+      oathCounter: '서약 반격',
+      cinderArc: '잿불 원무',
       execute: '처형',
       heal: '회복',
       guard: '방어',
@@ -202,6 +229,18 @@ export class GameHud {
     this.healthFill.style.transform = `scaleX(${clamp01(healthRatio)})`;
     this.staminaFill.style.transform = `scaleX(${clamp01(staminaRatio)})`;
     this.healthFill.parentElement?.classList.toggle('critical', healthRatio <= 0.25);
+  }
+
+  setSkills(entries: readonly SkillCooldownEntry[]): void {
+    for (const entry of entries) {
+      const slot = this.skillSlots[entry.id];
+      if (!slot) continue;
+      slot.root.classList.toggle('ready', entry.ready);
+      slot.root.classList.toggle('cooling', !entry.ready);
+      slot.cooldown.style.transform = `scaleY(${clamp01(entry.ratio)})`;
+      slot.time.textContent = entry.ready ? '' : entry.remaining.toFixed(entry.remaining < 1 ? 1 : 0);
+      slot.root.setAttribute('aria-label', `${entry.key} ${entry.label}${entry.ready ? ' 사용 가능' : ` ${entry.remaining.toFixed(1)}초 후 사용 가능`}`);
+    }
   }
 
   setLockTarget(snapshot: LockTargetSnapshot | null, camera: Camera): void {
@@ -245,9 +284,19 @@ export class GameHud {
         this.raidMechanicHint.textContent = snapshot.mechanicHint ?? '';
         this.raidMechanicFill.style.transform = `scaleX(${clamp01(snapshot.mechanicProgress ?? 0)})`;
       }
+      const counterVisible = snapshot.counterable ?? false;
+      this.bossCounterWindow.classList.toggle('is-hidden', !counterVisible);
+      this.bossCounterWindow.classList.toggle('downed', snapshot.counterDowned ?? false);
+      this.bossCounterFill.style.transform = `scaleX(${clamp01(1 - (snapshot.counterProgress ?? 0))})`;
+      const addCount = snapshot.summonedAdds ?? 0;
+      this.bossAddCount.classList.toggle('is-hidden', addCount <= 0);
+      const addLabel = this.bossAddCount.querySelector('strong');
+      if (addLabel) addLabel.textContent = `소환체 ${addCount}`;
     } else {
       this.root.classList.remove('boss-phase-two', 'boss-phase-three');
       this.raidMechanic.classList.add('is-hidden');
+      this.bossCounterWindow.classList.add('is-hidden');
+      this.bossAddCount.classList.add('is-hidden');
     }
 
     if (event === 'intro') {
@@ -267,6 +316,8 @@ export class GameHud {
       this.bossVictoryTitle.textContent = snapshot.victoryTitle ?? `${snapshot.name} 격파`;
       this.bossPanel.classList.add('is-hidden');
       this.raidMechanic.classList.add('is-hidden');
+      this.bossCounterWindow.classList.add('is-hidden');
+      this.bossAddCount.classList.add('is-hidden');
       this.showTimedPanel(this.bossVictory, 4200);
     }
   }

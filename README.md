@@ -16,7 +16,8 @@
 - Production Pass 9: 시작 화면·일시정지·자동 저장·이어하기, 그래픽·음량·카메라·조작 안내 설정
 - Release Candidate Pass 10: 엔딩 저장·복귀, 브라우저 수명주기 보호, 접근성, 카메라 할당 최적화와 출시 회귀 검사
 - Quality Assurance Pass 11: 화면 전환, 다중 카메라 충돌, 벡터 기반 방향 전환, 지역별 날씨·달빛·그림자와 단계형 성능 제어
-- 현재 상태: 연결된 전 지역, 보스 3명, 두 결말과 저장·설정을 포함한 `1.0.0-rc.2` 품질 보증 후보
+- Quality Assurance Pass 12: Q·E·R 기술, 독립 쿨타임, 보스 카운터 다운, 과부 소환전과 3D 기술 이펙트
+- 현재 상태: 연결된 전 지역, 보스 3명, 두 결말과 저장·설정을 포함한 `1.0.0-rc.3` 품질 보증 후보
 
 ## 출시 목표
 
@@ -33,6 +34,7 @@
 - `docs/COMBAT_BOSS_BIBLE.md`
 - `docs/PRODUCTION_PASS_10.md`
 - `docs/PRODUCTION_PASS_11.md`
+- `docs/PRODUCTION_PASS_12.md`
 - `docs/FINAL_QA_MATRIX.md`
 - `docs/RELEASE_VALIDATION.md`
 - `docs/TEN_PASS_ROADMAP.md`
@@ -61,10 +63,13 @@ npm run verify
 - 마우스 왼쪽: 약공격 3연계
 - `Shift + 마우스 왼쪽` 누르기·놓기: 차지 강공격
 - 마우스 오른쪽 유지: 방어
-- `F`: 패링
-- `Q`: 록온
-- `E`: 처형·서약석 휴식·지름길 작동·최종 결말 선택
-- `R`: 회복병 사용
+- `Q`: 재의 보법
+- `E`: 서약 반격·보스 카운터
+- `R`: 잿불 원무
+- `Tab` 또는 마우스 가운데 버튼: 록온
+- `C`: 패링
+- `F`: 처형·서약석 휴식·지름길 작동·최종 결말 선택
+- `1`: 회복병 사용
 - 마우스 이동 또는 오른쪽 스틱: 시점 회전
 - `Esc`: 일시정지·설정 메뉴
 - `H`: 조작 안내 숨김
@@ -76,4 +81,4 @@ npm run verify
 
 ## 배포
 
-`main` 브랜치에 푸시하면 GitHub Actions가 타입 검사, 프로덕션 빌드와 차수별 검증을 실행한 뒤 GitHub Pages에 배포합니다. Pass 12에서는 Q·E·R 기술과 보스 카운터·소환을, Pass 13에서는 완주·충돌·벽 관통·브라우저 회귀를 최종 검증합니다.
+`main` 브랜치에 푸시하면 GitHub Actions가 타입 검사, 프로덕션 빌드와 차수별 검증을 실행한 뒤 GitHub Pages에 배포합니다. Pass 12에서 Q·E·R 기술과 보스 카운터·소환을 구현했으며, Pass 13에서는 완주·충돌·벽 관통·브라우저 회귀를 최종 검증합니다.

@@ -49,6 +49,21 @@
           <div class="ash-display"><span class="ash-glyph"></span><strong id="ash-count">0</strong><small>재</small></div>
         </div>
 
+        <div id="skill-bar" class="skill-bar" aria-label="전투 기술 쿨타임">
+          <div id="skill-ash-step" class="skill-slot ready">
+            <kbd>Q</kbd><span class="skill-mark ash-step-mark"></span><div><strong>재의 보법</strong><small>회피 돌진</small></div>
+            <span id="skill-ash-step-cooldown" class="skill-cooldown"></span><em id="skill-ash-step-time"></em>
+          </div>
+          <div id="skill-oath-counter" class="skill-slot ready">
+            <kbd>E</kbd><span class="skill-mark oath-counter-mark"></span><div><strong>서약 반격</strong><small>보스 카운터</small></div>
+            <span id="skill-oath-counter-cooldown" class="skill-cooldown"></span><em id="skill-oath-counter-time"></em>
+          </div>
+          <div id="skill-cinder-arc" class="skill-slot ready">
+            <kbd>R</kbd><span class="skill-mark cinder-arc-mark"></span><div><strong>잿불 원무</strong><small>광역 연속기</small></div>
+            <span id="skill-cinder-arc-cooldown" class="skill-cooldown"></span><em id="skill-cinder-arc-time"></em>
+          </div>
+        </div>
+
         <div id="lock-target-panel" class="lock-target-panel is-hidden" aria-live="polite">
           <p id="lock-target-name">잿빛 문지기</p>
           <div class="enemy-health-track"><span id="lock-target-health-fill"></span></div>
@@ -68,6 +83,11 @@
           <div class="boss-health-track"><span id="boss-health-fill"></span></div>
           <div id="boss-shield-track" class="boss-shield-track"><small id="boss-secondary-label">방패 내구도</small><span id="boss-shield-fill"></span></div>
           <div class="boss-poise-track"><span id="boss-poise-fill"></span></div>
+          <div id="boss-counter-window" class="boss-counter-window is-hidden">
+            <strong>COUNTER</strong><span><kbd>E</kbd> 서약 반격</span>
+            <div><i id="boss-counter-fill"></i></div>
+          </div>
+          <div id="boss-add-count" class="boss-add-count is-hidden"><span></span><strong>소환체 0</strong></div>
         </div>
 
         <div id="boss-intro" class="boss-cinematic boss-intro is-hidden" role="status">
@@ -96,7 +116,7 @@
           <div class="raid-mechanic-track"><span id="raid-mechanic-fill"></span></div>
         </div>
 
-        <div id="execution-prompt" class="execution-prompt is-hidden"><kbd>E</kbd><span>처형</span></div>
+        <div id="execution-prompt" class="execution-prompt is-hidden"><kbd>F</kbd><span>처형</span></div>
         <div id="interaction-prompt" class="interaction-prompt is-hidden"></div>
         <div id="notice-panel" class="notice-panel is-hidden" role="status"></div>
 
@@ -143,9 +163,10 @@
           <p><kbd>Shift</kbd><span>질주</span></p>
           <p><kbd>Space</kbd><span>회피</span></p>
           <p><kbd>LMB / Shift+LMB</kbd><span>3연계 / 차지 강공격</span></p>
-          <p><kbd>RMB / F</kbd><span>방어 / 패링</span></p>
-          <p><kbd>Q / E</kbd><span>록온 / 상호작용·처형</span></p>
-          <p><kbd>R</kbd><span>회복병 사용</span></p>
+          <p><kbd>RMB / C</kbd><span>방어 / 패링</span></p>
+          <p><kbd>Q / E / R</kbd><span>재의 보법 / 반격 / 원무</span></p>
+          <p><kbd>Tab / MMB</kbd><span>록온</span></p>
+          <p><kbd>F / 1</kbd><span>상호작용·처형 / 회복병</span></p>
           <p><kbd>Mouse</kbd><span>시점</span></p>
           <p><kbd>H</kbd><span>안내 숨김</span></p>
         </div>
@@ -179,7 +200,7 @@
             <button id="title-settings-button" type="button">설정</button>
           </div>
           <p id="save-summary" class="save-summary is-hidden"></p>
-          <p class="menu-build">RELEASE CANDIDATE · 1.0.0-RC.2</p>
+          <p class="menu-build">RELEASE CANDIDATE · 1.0.0-RC.3</p>
         </div>
       </section>
 

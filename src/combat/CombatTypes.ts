@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 
 export type PlayerAttackId = 'light1' | 'light2' | 'light3' | 'heavy';
+export type PlayerSkillId = 'ashStep' | 'oathCounter' | 'cinderArc';
 
 export type AttackShape = 'cone' | 'radial' | 'line' | 'donut';
 
@@ -20,6 +21,8 @@ export interface AttackPulse {
   readonly shape?: AttackShape;
   readonly innerRange?: number;
   readonly width?: number;
+  readonly skillId?: PlayerSkillId;
+  readonly counterPower?: number;
 }
 
 export type EnemyDamageResult = 'ignored' | 'hit' | 'broken' | 'killed';
@@ -56,4 +59,40 @@ export interface BossSnapshot {
   readonly mechanicHint?: string;
   readonly mechanicProgress?: number;
   readonly mechanicDanger?: boolean;
+  readonly counterable?: boolean;
+  readonly counterProgress?: number;
+  readonly counterDowned?: boolean;
+  readonly summonedAdds?: number;
+}
+
+export interface BossCounterSnapshot {
+  readonly active: boolean;
+  readonly progress: number;
+  readonly downed: boolean;
+}
+
+export type BossSummonKind = 'oathguard' | 'broodling' | 'mirrorEcho';
+
+export interface BossSummonRequest {
+  readonly kind: BossSummonKind;
+  readonly count: number;
+  readonly origin: THREE.Vector3;
+}
+
+export interface PlayerSkillEvent {
+  readonly skillId: PlayerSkillId;
+  readonly phase: 'cast' | 'impact';
+  readonly position: THREE.Vector3;
+  readonly forward: THREE.Vector3;
+  readonly intensity: number;
+}
+
+export interface SkillCooldownEntry {
+  readonly id: PlayerSkillId;
+  readonly label: string;
+  readonly key: 'Q' | 'E' | 'R';
+  readonly remaining: number;
+  readonly duration: number;
+  readonly ratio: number;
+  readonly ready: boolean;
 }

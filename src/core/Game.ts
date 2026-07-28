@@ -669,6 +669,7 @@ export class Game {
     this.hud.setFps(frameStats.fps);
     this.hud.setPlayerState(this.player.getMotionState(), this.player.getSpeed(), this.player.isGrounded());
     this.hud.setVitals(this.player.getHealthRatio(), this.player.getStaminaRatio());
+    this.hud.setSkills(this.player.getSkillCooldowns());
     this.hud.setCharge(this.player.getChargeRatio());
     const bossSnapshot = this.combat.getBossSnapshot();
     this.hud.setBoss(bossSnapshot, this.combat.consumeBossPresentationEvent());

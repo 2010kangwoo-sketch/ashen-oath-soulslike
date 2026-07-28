@@ -683,7 +683,7 @@ export class ProgressionDirector {
         const distance = altar.position.distanceTo(this.playerPosition);
         if (distance <= GAME_CONFIG.world.interactionRadius + 0.4 && distance < bestDistance) {
           bestDistance = distance;
-          this.interaction = `E  ${altar.name}`;
+          this.interaction = `F  ${altar.name}`;
         }
       }
     }
@@ -693,7 +693,7 @@ export class ProgressionDirector {
         bestDistance = distance;
         this.interaction = combat.hasThreatNear(this.playerPosition, GAME_CONFIG.world.threatRadius)
           ? '적을 물리쳐 서약석을 밝히기'
-          : `E  ${shrine.name}에서 휴식`;
+          : `F  ${shrine.name}에서 휴식`;
       }
     }
     for (const shortcut of this.shortcuts) {
@@ -703,7 +703,7 @@ export class ProgressionDirector {
         bestDistance = distance;
         this.interaction = combat.hasThreatNear(this.playerPosition, GAME_CONFIG.world.threatRadius)
           ? '적을 물리쳐 장치를 작동시키기'
-          : `E  ${shortcut.name} 지름길 열기`;
+          : `F  ${shortcut.name} 지름길 열기`;
       }
     }
   }

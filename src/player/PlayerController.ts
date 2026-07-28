@@ -2,14 +2,31 @@ import * as THREE from 'three';
 import RAPIER, { type Collider, type KinematicCharacterController, type RigidBody } from '@dimforge/rapier3d-compat';
 import type { AudioDirector } from '../audio/AudioDirector';
 import { GAME_CONFIG } from '../config/GameConfig';
-import type { AttackPulse, PlayerAttackId } from '../combat/CombatTypes';
+import type {
+  AttackPulse,
+  PlayerAttackId,
+  PlayerSkillEvent,
+  PlayerSkillId,
+  SkillCooldownEntry,
+} from '../combat/CombatTypes';
 import { InputController } from '../input/InputController';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { AshenKnightVisual, type KnightVisualState } from './AshenKnightVisual';
 
 export type PlayerMotionState = KnightVisualState;
 export type DamageResult = 'hit' | 'evaded' | 'guarded' | 'parried';
-type PlayerAction = 'none' | 'dodge' | PlayerAttackId | 'heavyCharge' | 'execute' | 'heal' | 'guard' | 'parry' | 'stagger' | 'dead';
+type PlayerAction =
+  | 'none'
+  | 'dodge'
+  | PlayerAttackId
+  | PlayerSkillId
+  | 'heavyCharge'
+  | 'execute'
+  | 'heal'
+  | 'guard'
+  | 'parry'
+  | 'stagger'
+  | 'dead';
 
 export class PlayerController {
   readonly visual: THREE.Group;
@@ -51,7 +68,14 @@ export class PlayerController {
   private footstepDistance = 0;
   private pendingFootsteps = 0;
   private attackPulseEmitted = false;
-  private pendingAttackPulse: AttackPulse | null = null;
+  private readonly pendingAttackPulses: AttackPulse[] = [];
+  private readonly pendingSkillEvents: PlayerSkillEvent[] = [];
+  private readonly skillCooldowns: Record<PlayerSkillId, number> = {
+    ashStep: 0,
+    oathCounter: 0,
+    cinderArc: 0,
+  };
+  private skillPulseIndex = 0;
   private invulnerable = false;
   private flaskCharges: number = GAME_CONFIG.player.flaskCapacity;
   private healApplied = false;
@@ -175,15 +199,18 @@ export class PlayerController {
     this.chargeRatio = 0;
     this.executionTarget = null;
     this.executionImpactPending = false;
-    this.pendingAttackPulse = null;
+    this.pendingAttackPulses.length = 0;
+    this.pendingSkillEvents.length = 0;
     this.attackPulseEmitted = false;
     return 'hit';
   }
 
   consumeAttackPulse(): AttackPulse | null {
-    const pulse = this.pendingAttackPulse;
-    this.pendingAttackPulse = null;
-    return pulse;
+    return this.pendingAttackPulses.shift() ?? null;
+  }
+
+  consumeSkillEvent(): PlayerSkillEvent | null {
+    return this.pendingSkillEvents.shift() ?? null;
   }
 
   reset(): void {
@@ -205,7 +232,10 @@ export class PlayerController {
     this.state = 'airborne';
     this.sprintBlend = 0;
     this.invulnerable = false;
-    this.pendingAttackPulse = null;
+    this.pendingAttackPulses.length = 0;
+    this.pendingSkillEvents.length = 0;
+    this.resetSkillCooldowns();
+    this.skillPulseIndex = 0;
     this.chargeRatio = 0;
     this.attackDamageScale = 1;
     this.attackPoiseScale = 1;
@@ -237,7 +267,10 @@ export class PlayerController {
     this.state = 'airborne';
     this.sprintBlend = 0;
     this.invulnerable = false;
-    this.pendingAttackPulse = null;
+    this.pendingAttackPulses.length = 0;
+    this.pendingSkillEvents.length = 0;
+    this.resetSkillCooldowns();
+    this.skillPulseIndex = 0;
     this.chargeRatio = 0;
     this.attackDamageScale = 1;
     this.attackPoiseScale = 1;
@@ -256,6 +289,7 @@ export class PlayerController {
     this.stamina = GAME_CONFIG.player.maxStamina;
     this.flaskCharges = GAME_CONFIG.player.flaskCapacity;
     this.staminaRegenDelay = 0;
+    this.resetSkillCooldowns();
     if (this.action !== 'dead') this.finishAction();
   }
 
@@ -326,6 +360,15 @@ export class PlayerController {
     return this.action === 'heavyCharge' ? this.chargeRatio : 0;
   }
 
+  getSkillCooldowns(): readonly SkillCooldownEntry[] {
+    const skills = GAME_CONFIG.combat.skills;
+    return [
+      this.makeSkillCooldownEntry('ashStep', 'Q', skills.ashStep.label, skills.ashStep.cooldown),
+      this.makeSkillCooldownEntry('oathCounter', 'E', skills.oathCounter.label, skills.oathCounter.cooldown),
+      this.makeSkillCooldownEntry('cinderArc', 'R', skills.cinderArc.label, skills.cinderArc.cooldown),
+    ];
+  }
+
   consumeFootstep(): boolean {
     if (this.pendingFootsteps <= 0) return false;
     this.pendingFootsteps -= 1;
@@ -368,10 +411,18 @@ export class PlayerController {
     const heavyPressed = input.consumeAction('heavyAttack');
     const parryPressed = input.consumeAction('parry');
     const healPressed = input.consumeAction('heal');
+    const ashStepPressed = input.consumeAction('skillQ');
+    const oathCounterPressed = input.consumeAction('skillE');
+    const cinderArcPressed = input.consumeAction('skillR');
 
     if (this.action === 'dead' || this.action === 'stagger' || this.action === 'execute') return;
 
     if (this.action === 'heal') {
+      if (dodgePressed && this.canDodge()) this.startDodge(lockTarget);
+      return;
+    }
+
+    if (isPlayerSkill(this.action)) {
       if (dodgePressed && this.canDodge()) this.startDodge(lockTarget);
       return;
     }
@@ -406,6 +457,19 @@ export class PlayerController {
 
     if (healPressed && this.canHeal()) {
       this.startHeal();
+      return;
+    }
+
+    if (ashStepPressed && this.canStartSkill('ashStep')) {
+      this.startSkill('ashStep', lockTarget);
+      return;
+    }
+    if (oathCounterPressed && this.canStartSkill('oathCounter')) {
+      this.startSkill('oathCounter', lockTarget);
+      return;
+    }
+    if (cinderArcPressed && this.canStartSkill('cinderArc')) {
+      this.startSkill('cinderArc', lockTarget);
       return;
     }
 
@@ -454,7 +518,40 @@ export class PlayerController {
       return this.actionTimer > profile.activeEnd + 0.09;
     }
     if (this.action === 'heavyCharge') return this.actionTimer >= 0.08;
+    if (this.action === 'ashStep') return this.actionTimer >= GAME_CONFIG.combat.skills.ashStep.activeEnd + 0.06;
+    if (this.action === 'oathCounter') return this.actionTimer >= GAME_CONFIG.combat.skills.oathCounter.activeEnd + 0.08;
+    if (this.action === 'cinderArc') return this.actionTimer >= 0.98;
     return false;
+  }
+
+  private canStartSkill(skill: PlayerSkillId): boolean {
+    const staminaCost = GAME_CONFIG.combat.skills[skill].staminaCost;
+    return this.grounded
+      && this.skillCooldowns[skill] <= 0
+      && this.stamina >= staminaCost
+      && (this.action === 'none' || this.action === 'guard');
+  }
+
+  private startSkill(skill: PlayerSkillId, lockTarget: THREE.Vector3 | null): void {
+    const profile = GAME_CONFIG.combat.skills[skill];
+    this.spendStamina(profile.staminaCost);
+    this.skillCooldowns[skill] = profile.cooldown;
+    this.action = skill;
+    this.actionTimer = 0;
+    this.actionProgress = 0;
+    this.skillPulseIndex = 0;
+    this.attackPulseEmitted = false;
+    this.queuedLightAttack = false;
+    this.chargeRatio = 0;
+    this.alignAttackFacing(lockTarget);
+    this.horizontalVelocity.multiplyScalar(skill === 'ashStep' ? 0 : 0.08);
+    this.pendingSkillEvents.push({
+      skillId: skill,
+      phase: 'cast',
+      position: this.getLockPoint(new THREE.Vector3()),
+      forward: this.forward.clone(),
+      intensity: skill === 'cinderArc' ? 1.25 : 1,
+    });
   }
 
   private startHeavyCharge(lockTarget: THREE.Vector3 | null): void {
@@ -578,6 +675,29 @@ export class PlayerController {
       return this.horizontalVelocity.copy(this.forward).multiplyScalar(
         (profile.rootDistance / profile.duration) * Math.max(0, rootWindow) * 1.55,
       );
+    }
+
+    if (this.action === 'ashStep') {
+      const profile = GAME_CONFIG.combat.skills.ashStep;
+      const progress = THREE.MathUtils.clamp(this.actionTimer / profile.duration, 0, 1);
+      const burst = Math.sin(Math.min(1, progress / 0.72) * Math.PI);
+      return this.horizontalVelocity.copy(this.forward).multiplyScalar(
+        (profile.rootDistance / profile.duration) * (0.42 + Math.max(0, burst) * 1.32),
+      );
+    }
+
+    if (this.action === 'oathCounter') {
+      const profile = GAME_CONFIG.combat.skills.oathCounter;
+      const progress = THREE.MathUtils.clamp(this.actionTimer / profile.duration, 0, 1);
+      const step = Math.sin(Math.min(1, progress / 0.68) * Math.PI);
+      return this.horizontalVelocity.copy(this.forward).multiplyScalar(
+        (profile.rootDistance / profile.duration) * Math.max(0, step) * 1.65,
+      );
+    }
+
+    if (this.action === 'cinderArc') {
+      this.horizontalVelocity.multiplyScalar(Math.exp(-17 * delta));
+      return this.horizontalVelocity;
     }
 
     if (this.action === 'heavyCharge') {
@@ -711,8 +831,16 @@ export class PlayerController {
     const attackAction = isPlayerAttack(currentAction);
     const attackProfile = attackAction ? GAME_CONFIG.combat.attacks[currentAction] : null;
     const trackingOpen = attackProfile !== null && this.actionTimer < attackProfile.activeStart * 0.82;
+    const skillTrackingOpen = currentAction === 'ashStep'
+      ? this.actionTimer < GAME_CONFIG.combat.skills.ashStep.activeStart * 0.82
+      : currentAction === 'oathCounter'
+        ? this.actionTimer < GAME_CONFIG.combat.skills.oathCounter.activeStart * 0.9
+        : currentAction === 'cinderArc'
+          ? this.actionTimer < 0.24
+          : false;
     const canTrack = this.action === 'none' || this.action === 'guard' || this.action === 'parry'
-      || this.action === 'heavyCharge' || this.action === 'heal' || this.action === 'execute' || trackingOpen;
+      || this.action === 'heavyCharge' || this.action === 'heal' || this.action === 'execute'
+      || trackingOpen || skillTrackingOpen;
     if (canTrack) {
       let targetYaw: number | null = null;
       let turnSpeed: number = GAME_CONFIG.player.turnSpeedWalk;
@@ -721,7 +849,7 @@ export class PlayerController {
         const position = this.getWorldPosition(new THREE.Vector3());
         const direction = this.scratchDirection.copy(trackingTarget).sub(position).setY(0);
         if (direction.lengthSq() > 0.001) targetYaw = Math.atan2(-direction.x, -direction.z);
-        turnSpeed = attackAction
+        turnSpeed = attackAction || isPlayerSkill(currentAction)
           ? THREE.MathUtils.degToRad(GAME_CONFIG.combat.attackTrackingDegrees) / 0.24
           : GAME_CONFIG.player.lockTurnSpeed;
       } else if (hasInput && (this.action === 'none' || this.action === 'guard' || this.action === 'heavyCharge' || this.action === 'heal')) {
@@ -798,13 +926,92 @@ export class PlayerController {
       return;
     }
 
+    if (this.action === 'ashStep') {
+      const profile = GAME_CONFIG.combat.skills.ashStep;
+      this.actionProgress = THREE.MathUtils.clamp(this.actionTimer / profile.duration, 0, 1);
+      if (!this.attackPulseEmitted && previousTimer < profile.activeStart && this.actionTimer >= profile.activeStart) {
+        const position = this.getLockPoint(new THREE.Vector3()).addScaledVector(this.forward, 0.72);
+        this.pendingAttackPulses.push({
+          source: 'player',
+          position,
+          forward: this.forward.clone(),
+          range: profile.range,
+          arcCos: profile.arcCos,
+          damage: profile.damage,
+          poiseDamage: profile.poiseDamage,
+          impact: 2.5,
+          weight: 'medium',
+          skillId: 'ashStep',
+        });
+        this.emitSkillImpact('ashStep', position, 1);
+        this.attackPulseEmitted = true;
+      }
+      if (this.actionTimer >= profile.duration) this.finishAction();
+      return;
+    }
+
+    if (this.action === 'oathCounter') {
+      const profile = GAME_CONFIG.combat.skills.oathCounter;
+      this.actionProgress = THREE.MathUtils.clamp(this.actionTimer / profile.duration, 0, 1);
+      if (!this.attackPulseEmitted && previousTimer < profile.activeStart && this.actionTimer >= profile.activeStart) {
+        const position = this.getLockPoint(new THREE.Vector3()).addScaledVector(this.forward, 0.5);
+        this.pendingAttackPulses.push({
+          source: 'player',
+          position,
+          forward: this.forward.clone(),
+          range: profile.range,
+          arcCos: profile.arcCos,
+          damage: profile.damage,
+          poiseDamage: profile.poiseDamage,
+          impact: 2.2,
+          weight: 'heavy',
+          skillId: 'oathCounter',
+          counterPower: 1,
+        });
+        this.emitSkillImpact('oathCounter', position, 1.15);
+        this.attackPulseEmitted = true;
+      }
+      if (this.actionTimer >= profile.duration) this.finishAction();
+      return;
+    }
+
+    if (this.action === 'cinderArc') {
+      const profile = GAME_CONFIG.combat.skills.cinderArc;
+      this.actionProgress = THREE.MathUtils.clamp(this.actionTimer / profile.duration, 0, 1);
+      while (this.skillPulseIndex < profile.activeTimes.length) {
+        const eventTime = profile.activeTimes[this.skillPulseIndex];
+        if (eventTime === undefined || previousTimer >= eventTime || this.actionTimer < eventTime) break;
+        const range = profile.ranges[this.skillPulseIndex] ?? profile.ranges[profile.ranges.length - 1];
+        if (range === undefined) break;
+        const position = this.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.46, 0));
+        this.pendingAttackPulses.push({
+          source: 'player',
+          position,
+          forward: this.forward.clone(),
+          range,
+          arcCos: -1,
+          damage: profile.damage + this.skillPulseIndex * 3,
+          poiseDamage: profile.poiseDamage + this.skillPulseIndex * 4,
+          impact: 1.7 + this.skillPulseIndex * 0.38,
+          weight: this.skillPulseIndex === profile.activeTimes.length - 1 ? 'heavy' : 'medium',
+          radial: true,
+          shape: 'radial',
+          skillId: 'cinderArc',
+        });
+        this.emitSkillImpact('cinderArc', position, 0.82 + this.skillPulseIndex * 0.24);
+        this.skillPulseIndex += 1;
+      }
+      if (this.actionTimer >= profile.duration) this.finishAction();
+      return;
+    }
+
     const attack = this.action;
     const profile = GAME_CONFIG.combat.attacks[attack];
     this.actionProgress = THREE.MathUtils.clamp(this.actionTimer / profile.duration, 0, 1);
     if (!this.attackPulseEmitted && previousTimer < profile.activeStart && this.actionTimer >= profile.activeStart) {
       const position = this.getLockPoint(new THREE.Vector3()).addScaledVector(this.forward, 0.45);
       const weight = attack === 'heavy' ? 'heavy' : attack === 'light3' ? 'medium' : 'light';
-      this.pendingAttackPulse = {
+      this.pendingAttackPulses.push({
         source: 'player',
         position,
         forward: this.forward.clone(),
@@ -814,7 +1021,7 @@ export class PlayerController {
         poiseDamage: profile.poiseDamage * this.attackPoiseScale,
         impact: attack === 'heavy' ? 2.8 + this.chargeRatio * 0.7 : attack === 'light3' ? 2.15 : 1.45,
         weight,
-      };
+      });
       this.attackPulseEmitted = true;
     }
     if (this.actionTimer >= profile.duration) {
@@ -834,7 +1041,10 @@ export class PlayerController {
     this.invulnerable = this.action === 'execute'
       || (this.action === 'dodge'
         && this.actionTimer >= GAME_CONFIG.player.dodgeInvulnerableStart
-        && this.actionTimer <= GAME_CONFIG.player.dodgeInvulnerableEnd);
+        && this.actionTimer <= GAME_CONFIG.player.dodgeInvulnerableEnd)
+      || (this.action === 'ashStep'
+        && this.actionTimer >= GAME_CONFIG.combat.skills.ashStep.invulnerableStart
+        && this.actionTimer <= GAME_CONFIG.combat.skills.ashStep.invulnerableEnd);
   }
 
   private finishAction(): void {
@@ -848,6 +1058,7 @@ export class PlayerController {
     this.attackPoiseScale = 1;
     this.executionTarget = null;
     this.healApplied = false;
+    this.skillPulseIndex = 0;
   }
 
   private updateMotionState(runRequested: boolean): void {
@@ -867,10 +1078,14 @@ export class PlayerController {
   }
 
   private updateResourceTimers(delta: number): void {
+    for (const skill of ['ashStep', 'oathCounter', 'cinderArc'] as const) {
+      this.skillCooldowns[skill] = Math.max(0, this.skillCooldowns[skill] - delta);
+    }
     this.staminaRegenDelay = Math.max(0, this.staminaRegenDelay - delta);
     if (this.staminaRegenDelay <= 0 && this.action !== 'dodge' && this.action !== 'guard'
       && this.action !== 'parry' && this.action !== 'heavyCharge'
-      && this.action !== 'execute' && this.action !== 'heal' && this.action !== 'dead') {
+      && this.action !== 'execute' && this.action !== 'heal' && !isPlayerSkill(this.action)
+      && this.action !== 'dead') {
       this.stamina = Math.min(
         GAME_CONFIG.player.maxStamina,
         this.stamina + GAME_CONFIG.player.staminaRegenPerSecond * delta,
@@ -881,6 +1096,40 @@ export class PlayerController {
   private spendStamina(amount: number): void {
     this.stamina = Math.max(0, this.stamina - amount);
     this.staminaRegenDelay = GAME_CONFIG.player.staminaRegenDelay;
+  }
+
+  private emitSkillImpact(skillId: PlayerSkillId, position: THREE.Vector3, intensity: number): void {
+    this.pendingSkillEvents.push({
+      skillId,
+      phase: 'impact',
+      position: position.clone(),
+      forward: this.forward.clone(),
+      intensity,
+    });
+  }
+
+  private makeSkillCooldownEntry(
+    id: PlayerSkillId,
+    key: 'Q' | 'E' | 'R',
+    label: string,
+    duration: number,
+  ): SkillCooldownEntry {
+    const remaining = Math.max(0, this.skillCooldowns[id]);
+    return {
+      id,
+      key,
+      label,
+      remaining,
+      duration,
+      ratio: duration > 0 ? THREE.MathUtils.clamp(remaining / duration, 0, 1) : 0,
+      ready: remaining <= 0,
+    };
+  }
+
+  private resetSkillCooldowns(): void {
+    this.skillCooldowns.ashStep = 0;
+    this.skillCooldowns.oathCounter = 0;
+    this.skillCooldowns.cinderArc = 0;
   }
 
   private syncVisual(): void {
@@ -894,7 +1143,8 @@ export class PlayerController {
       this.actionProgress = 0;
       this.horizontalVelocity.set(0, 0, 0);
       this.knockbackVelocity.set(0, 0, 0);
-      this.pendingAttackPulse = null;
+      this.pendingAttackPulses.length = 0;
+      this.pendingSkillEvents.length = 0;
     }
   }
 }
@@ -910,4 +1160,8 @@ function moveAngleTowards(current: number, target: number, maxDelta: number): nu
 
 function isPlayerAttack(action: PlayerAction): action is PlayerAttackId {
   return action === 'light1' || action === 'light2' || action === 'light3' || action === 'heavy';
+}
+
+function isPlayerSkill(action: PlayerAction): action is PlayerSkillId {
+  return action === 'ashStep' || action === 'oathCounter' || action === 'cinderArc';
 }

@@ -1,3 +1,5 @@
+import type { BossSummonKind, PlayerSkillId } from '../combat/CombatTypes';
+
 export type SwingWeight = 'light' | 'medium' | 'heavy';
 
 export class AudioDirector {
@@ -91,6 +93,46 @@ export class AudioDirector {
     this.playNoiseBurst(now, 0.2, 1600, 9000, 0.12);
     this.playOscillator(now, 'sine', 980, 430, 0.23, 0.085);
     this.playOscillator(now + 0.018, 'triangle', 1460, 620, 0.17, 0.04);
+  }
+
+  skill(skill: PlayerSkillId): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    if (skill === 'ashStep') {
+      this.playNoiseBurst(now, 0.24, 480, 7600, 0.095);
+      this.playOscillator(now, 'triangle', 520, 118, 0.32, 0.055);
+      this.playOscillator(now + 0.03, 'sine', 940, 360, 0.24, 0.026);
+    } else if (skill === 'oathCounter') {
+      this.playNoiseBurst(now, 0.22, 1200, 9800, 0.105);
+      this.playOscillator(now, 'square', 310, 96, 0.3, 0.062);
+      this.playOscillator(now + 0.05, 'sine', 1240, 520, 0.26, 0.042);
+    } else {
+      this.playNoiseBurst(now, 0.46, 160, 6200, 0.12);
+      this.playOscillator(now, 'sawtooth', 180, 58, 0.64, 0.085);
+      this.playOscillator(now + 0.08, 'triangle', 540, 164, 0.54, 0.045);
+    }
+  }
+
+  counterSuccess(): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playNoiseBurst(now, 0.36, 1100, 12000, 0.16);
+    this.playOscillator(now, 'sine', 1480, 620, 0.44, 0.12);
+    this.playOscillator(now + 0.025, 'triangle', 740, 185, 0.5, 0.09);
+    this.playOscillator(now + 0.06, 'square', 210, 62, 0.42, 0.055);
+  }
+
+  bossSummon(kind: BossSummonKind): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const brood = kind === 'broodling';
+    const echo = kind === 'mirrorEcho';
+    this.playNoiseBurst(now, brood ? 0.42 : 0.58, brood ? 220 : 48, echo ? 8600 : 3600, 0.095);
+    this.playOscillator(now, echo ? 'sine' : 'sawtooth', echo ? 620 : 126, echo ? 190 : 38, 0.72, 0.07);
+    if (echo) this.playOscillator(now + 0.05, 'triangle', 930, 310, 0.58, 0.038);
   }
 
   postureBreak(): void {

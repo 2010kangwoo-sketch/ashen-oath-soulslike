@@ -10,6 +10,7 @@ import { PhysicsWorld } from '../physics/PhysicsWorld';
 import type { CombatEnemy } from './CombatEnemy';
 
 type HoundState =
+  | 'sealed'
   | 'dormant'
   | 'stalk'
   | 'circle'
@@ -64,7 +65,7 @@ const ATTACKS: Record<HoundAttackId, HoundAttackProfile> = {
 
 export class AshenHound implements CombatEnemy {
   readonly root = new THREE.Group();
-  readonly ashReward = 56;
+  readonly ashReward: number;
   private readonly rig = new THREE.Group();
   private readonly bodyPivot = new THREE.Group();
   private readonly headPivot = new THREE.Group();
@@ -100,6 +101,7 @@ export class AshenHound implements CombatEnemy {
   private gait = 0;
   private attackAllowed = true;
   private hitFlash = 0;
+  private readonly summoned: boolean;
 
   constructor(
     scene: THREE.Scene,
@@ -109,7 +111,10 @@ export class AshenHound implements CombatEnemy {
     spawn: THREE.Vector3,
     private readonly audio: AudioDirector,
     private side = 1,
+    initiallySealed = false,
   ) {
+    this.summoned = initiallySealed;
+    this.ashReward = initiallySealed ? 0 : 56;
     this.spawn = spawn.clone();
     this.body = physics.world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y, spawn.z),
@@ -196,9 +201,12 @@ export class AshenHound implements CombatEnemy {
     tail.position.set(0, 0.05, 0.86);
     tail.rotation.x = -0.85;
     this.bodyPivot.add(tail);
+
+    if (initiallySealed) this.deactivateSummon();
   }
 
   fixedUpdate(delta: number, playerPosition: THREE.Vector3): void {
+    if (this.state === 'sealed') return;
     this.syncRootFromBody();
     this.horizontalStep.set(0, 0, 0);
     this.toPlayer.copy(playerPosition).sub(this.root.position).setY(0);
@@ -286,6 +294,7 @@ export class AshenHound implements CombatEnemy {
   }
 
   updateVisual(delta: number): void {
+    if (this.state === 'sealed') return;
     this.syncRootFromBody();
     this.visualTime += delta;
     this.hitFlash = Math.max(0, this.hitFlash - delta * 5.5);
@@ -347,14 +356,14 @@ export class AshenHound implements CombatEnemy {
   }
 
   receiveParry(): EnemyDamageResult {
-    if (this.state === 'dead' || this.state === 'executed') return 'ignored';
+    if (this.state === 'sealed' || this.state === 'dead' || this.state === 'executed') return 'ignored';
     this.poise += this.maxPoise;
     this.hitFlash = 0.8;
     return this.breakPosture();
   }
 
   receiveDamage(damage: number, poiseDamage: number, impactDirection: THREE.Vector3): EnemyDamageResult {
-    if (this.state === 'dead' || this.state === 'executed') return 'ignored';
+    if (this.state === 'sealed' || this.state === 'dead' || this.state === 'executed') return 'ignored';
     this.health = Math.max(0, this.health - damage);
     this.poise += poiseDamage;
     this.hitFlash = 1;
@@ -395,6 +404,10 @@ export class AshenHound implements CombatEnemy {
   }
 
   reset(): void {
+    if (this.summoned) {
+      this.deactivateSummon();
+      return;
+    }
     this.body.setTranslation({ x: this.spawn.x, y: this.spawn.y, z: this.spawn.z }, true);
     this.body.setNextKinematicTranslation({ x: this.spawn.x, y: this.spawn.y, z: this.spawn.z });
     this.root.position.copy(this.spawn);
@@ -430,14 +443,46 @@ export class AshenHound implements CombatEnemy {
       healthRatio: this.health / this.maxHealth,
       poiseRatio: THREE.MathUtils.clamp(this.poise / this.maxPoise, 0, 1),
       executable: this.state === 'broken',
-      active: this.state !== 'dead',
+      active: this.state !== 'sealed' && this.state !== 'dead',
     };
   }
 
   getPosition(target: THREE.Vector3): THREE.Vector3 { return target.copy(this.root.position); }
-  isActive(): boolean { return this.state !== 'dead'; }
+  isActive(): boolean { return this.state !== 'sealed' && this.state !== 'dead'; }
   isCommittedAttack(): boolean { return this.state === 'windup' || this.state === 'active' || this.state === 'recovery'; }
   setAttackAllowed(allowed: boolean): void { this.attackAllowed = allowed; }
+
+  activateSummonAt(position: THREE.Vector3, side: number): void {
+    if (!this.summoned) return;
+    this.side = side >= 0 ? 1 : -1;
+    this.body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
+    this.body.setNextKinematicTranslation({ x: position.x, y: position.y, z: position.z });
+    this.root.position.copy(position);
+    this.root.visible = true;
+    this.collider.setEnabled(true);
+    this.health = this.maxHealth;
+    this.poise = 0;
+    this.state = 'stalk';
+    this.stateTimer = -0.35;
+    this.attack = 'bite';
+    this.attackPulseEmitted = false;
+    this.pendingAttackPulse = null;
+    this.impactVelocity.set(0, 0, 0);
+    this.verticalVelocity = 0;
+    this.grounded = false;
+    this.attackAllowed = true;
+    this.hitFlash = 0;
+  }
+
+  deactivateSummon(): void {
+    if (!this.summoned) return;
+    this.state = 'sealed';
+    this.pendingAttackPulse = null;
+    this.root.visible = false;
+    this.collider.setEnabled(false);
+    this.body.setTranslation({ x: this.spawn.x, y: -80, z: this.spawn.z }, true);
+    this.body.setNextKinematicTranslation({ x: this.spawn.x, y: -80, z: this.spawn.z });
+  }
 
   private emitAttackPulse(profile: HoundAttackProfile): void {
     if (this.attackPulseEmitted) return;

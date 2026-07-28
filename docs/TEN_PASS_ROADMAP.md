@@ -82,4 +82,4 @@ WASD 이동을 유지하며 Q·E·R에 서로 다른 목적과 쿨타임을 가�
 7. 증분 Git bundle 검증 및 깨끗한 저장소에서 fast-forward 재현
 
 
-출시 후보의 상세 구현은 `docs/PRODUCTION_PASS_10.md`, Pass 11 품질 보증은 `docs/PRODUCTION_PASS_11.md`, 최종 판정 기준은 `docs/FINAL_QA_MATRIX.md`에 기록한다.
+출시 후보의 상세 구현은 `docs/PRODUCTION_PASS_10.md`, Pass 11~12 품질 보증은 `docs/PRODUCTION_PASS_11.md`와 `docs/PRODUCTION_PASS_12.md`, 최종 판정 기준은 `docs/FINAL_QA_MATRIX.md`에 기록한다.

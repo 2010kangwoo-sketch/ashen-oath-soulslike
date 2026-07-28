@@ -7,8 +7,10 @@ import RAPIER, {
 import type { AudioDirector, SwingWeight } from '../audio/AudioDirector';
 import type {
   AttackPulse,
+  BossCounterSnapshot,
   BossPresentationEvent,
   BossSnapshot,
+  BossSummonRequest,
   EnemyDamageResult,
   LockTargetSnapshot,
 } from '../combat/CombatTypes';
@@ -141,6 +143,9 @@ export class BellDevouringWidow implements BossEnemy {
   private mechanicProgress = 0;
   private mechanicDanger = false;
   private highContrastTelegraphs = false;
+  private counterDowned = false;
+  private summonTriggered = false;
+  private pendingSummonRequest: BossSummonRequest | null = null;
 
   constructor(
     scene: THREE.Scene,
@@ -294,6 +299,9 @@ export class BellDevouringWidow implements BossEnemy {
     this.attackQueue.length = 0;
     this.hitFlash = 0;
     this.phaseBreakTriggered = false;
+    this.counterDowned = false;
+    this.summonTriggered = false;
+    this.pendingSummonRequest = null;
     this.presentationEvent = null;
     this.mechanicName = '';
     this.mechanicHint = '';
@@ -362,6 +370,14 @@ export class BellDevouringWidow implements BossEnemy {
         this.presentationEvent = 'phase2';
         this.audio.bossPhase();
         this.audio.silkSnap(true);
+        if (!this.summonTriggered) {
+          this.summonTriggered = true;
+          this.pendingSummonRequest = {
+            kind: 'broodling',
+            count: 3,
+            origin: ARENA_CENTER.clone(),
+          };
+        }
       }
       if (this.stateTimer >= 2.55) {
         this.poise = 0;
@@ -371,7 +387,9 @@ export class BellDevouringWidow implements BossEnemy {
     } else if (this.state === 'stagger') {
       this.stateTimer += delta;
       this.poise = Math.max(0, this.poise - delta * 16);
-      if (this.stateTimer >= (this.phase === 2 ? 1.35 : 1.05)) {
+      const staggerDuration = this.counterDowned ? 3.0 : (this.phase === 2 ? 1.35 : 1.05);
+      if (this.stateTimer >= staggerDuration) {
+        this.counterDowned = false;
         this.state = 'stalk';
         this.stateTimer = -0.38;
       }
@@ -409,10 +427,12 @@ export class BellDevouringWidow implements BossEnemy {
     this.syncRootFromBody();
     this.visualTime += delta;
     this.hitFlash = Math.max(0, this.hitFlash - delta * 4.5);
+    const counterActive = this.getCounterSnapshot().active;
     const phasePulse = this.phase === 2 ? 0.34 + Math.sin(this.visualTime * 5.8) * 0.12 : 0.08;
     this.carapaceMaterial.emissive.setRGB(this.hitFlash * 0.65 + phasePulse * 0.38, this.hitFlash * 0.05, this.hitFlash * 0.08 + phasePulse * 0.2);
     this.fleshMaterial.emissiveIntensity = 0.15 + this.hitFlash * 0.7 + phasePulse;
-    this.eyeMaterial.emissiveIntensity = 2.8 + Math.sin(this.visualTime * 7.2) * 0.45 + (this.state === 'windup' ? 1.6 : 0);
+    this.eyeMaterial.emissive.setHex(counterActive ? 0x3bd8ff : 0xa11c2d);
+    this.eyeMaterial.emissiveIntensity = 2.8 + Math.sin(this.visualTime * 7.2) * 0.45 + (this.state === 'windup' ? 1.6 : 0) + (counterActive ? 2.5 : 0);
     this.updatePose(delta);
     this.updateTelegraphs();
     this.updateBells(delta);
@@ -460,6 +480,9 @@ export class BellDevouringWidow implements BossEnemy {
       mechanicHint: this.mechanicHint || undefined,
       mechanicProgress: this.mechanicName ? this.mechanicProgress : undefined,
       mechanicDanger: this.mechanicDanger,
+      counterable: this.getCounterSnapshot().active,
+      counterProgress: this.getCounterSnapshot().progress,
+      counterDowned: this.counterDowned,
     };
   }
 
@@ -493,6 +516,42 @@ export class BellDevouringWidow implements BossEnemy {
     this.attackAllowed = allowed;
   }
 
+  getCounterSnapshot(): BossCounterSnapshot {
+    const profile = ATTACKS[this.attack];
+    const active = this.state === 'windup'
+      && !this.onCeiling
+      && this.attack === 'widowRush'
+      && this.stateTimer >= profile.windup * 0.32
+      && this.stateTimer <= profile.windup * 0.82;
+    const progress = active
+      ? THREE.MathUtils.clamp(
+        (this.stateTimer - profile.windup * 0.32) / Math.max(0.001, profile.windup * 0.5),
+        0,
+        1,
+      )
+      : 0;
+    return { active, progress, downed: this.counterDowned };
+  }
+
+  receiveCounter(): EnemyDamageResult {
+    if (!this.getCounterSnapshot().active) return 'ignored';
+    this.counterDowned = true;
+    this.onCeiling = false;
+    this.state = 'stagger';
+    this.stateTimer = 0;
+    this.poise = this.maxPoise;
+    this.hitFlash = 1.25;
+    this.attackQueue.length = 0;
+    this.impactVelocity.addScaledVector(this.forward, -2.4);
+    return 'broken';
+  }
+
+  consumeSummonRequest(): BossSummonRequest | null {
+    const request = this.pendingSummonRequest;
+    this.pendingSummonRequest = null;
+    return request;
+  }
+
   receiveParry(): EnemyDamageResult {
     if (!this.isActive() || this.onCeiling || this.state === 'intro' || this.state === 'phaseBreak') return 'ignored';
     this.poise += this.phase === 1 ? 34 : 52;
@@ -511,7 +570,7 @@ export class BellDevouringWidow implements BossEnemy {
     if (!this.isActive() || this.onCeiling || this.state === 'intro' || this.state === 'phaseBreak') return 'ignored';
     const aliveBells = this.bells.filter((bell) => bell.alive).length;
     const protection = this.phase === 1 ? 0.58 + (3 - aliveBells) * 0.12 : 1;
-    this.health = Math.max(0, this.health - damage * protection);
+    this.health = Math.max(0, this.health - damage * protection * (this.counterDowned ? 1.5 : 1));
     this.poise += poiseDamage * (this.phase === 1 ? 0.72 : 1);
     this.hitFlash = 1;
     this.impactVelocity.addScaledVector(this.scratch.copy(impactDirection).setY(0).normalize(), damage * 0.0035);

@@ -7,8 +7,10 @@ import RAPIER, {
 import type { AudioDirector, SwingWeight } from '../audio/AudioDirector';
 import type {
   AttackPulse,
+  BossCounterSnapshot,
   BossPresentationEvent,
   BossSnapshot,
+  BossSummonRequest,
   EnemyDamageResult,
   LockTargetSnapshot,
 } from '../combat/CombatTypes';
@@ -196,6 +198,7 @@ export class GatewardenVarkan implements BossEnemy {
   private shieldDebrisMesh: THREE.Mesh | null = null;
   private shieldDebrisBody: RigidBody | null = null;
   private shieldDebrisLife = 0;
+  private counterDowned = false;
 
   constructor(
     scene: THREE.Scene,
@@ -429,6 +432,7 @@ export class GatewardenVarkan implements BossEnemy {
     this.hitFlash = 0;
     this.shieldBroken = false;
     this.phaseBreakTriggered = false;
+    this.counterDowned = false;
     this.presentationEvent = null;
     this.root.visible = false;
     this.collider.setEnabled(false);
@@ -484,7 +488,9 @@ export class GatewardenVarkan implements BossEnemy {
     } else if (this.state === 'stagger') {
       this.stateTimer += delta;
       this.poise = Math.max(0, this.poise - delta * 18);
-      if (this.stateTimer >= (this.phase === 2 ? 1.65 : 1.1)) {
+      const staggerDuration = this.counterDowned ? 3.2 : (this.phase === 2 ? 1.65 : 1.1);
+      if (this.stateTimer >= staggerDuration) {
+        this.counterDowned = false;
         this.state = 'approach';
         this.stateTimer = -0.5;
       }
@@ -514,9 +520,12 @@ export class GatewardenVarkan implements BossEnemy {
     this.syncRootFromBody();
     this.visualTime += delta;
     this.hitFlash = Math.max(0, this.hitFlash - delta * 4.6);
+    const counterActive = this.getCounterSnapshot().active;
     const phaseGlow = this.phase === 2 || this.state === 'phaseBreak' ? 0.24 + Math.sin(this.visualTime * 5.2) * 0.08 : 0;
     this.armorMaterial.emissive.setRGB(this.hitFlash * 0.7 + phaseGlow, this.hitFlash * 0.11 + phaseGlow * 0.22, this.hitFlash * 0.04);
-    this.eyeMaterial.emissiveIntensity = 2.0 + Math.sin(this.visualTime * 4.2) * 0.32 + (this.state === 'windup' ? 1.4 : 0);
+    this.eyeMaterial.emissive.setHex(counterActive ? 0x45d8ff : 0x8f2d12);
+    this.eyeMaterial.emissiveIntensity = 2.0 + Math.sin(this.visualTime * 4.2) * 0.32 + (this.state === 'windup' ? 1.4 : 0) + (counterActive ? 2.4 : 0);
+    this.oathfireMaterial.color.setHex(counterActive ? 0x74dfff : 0xc87335);
     this.oathfireMaterial.emissiveIntensity = 1.8 + phaseGlow * 4.5 + (this.state === 'active' ? 0.85 : 0);
     this.shieldMaterial.emissiveIntensity += ((this.state === 'windup' ? 0.72 : 0.2) - this.shieldMaterial.emissiveIntensity) * (1 - Math.exp(-8 * delta));
     this.updateTelegraph(delta);
@@ -561,6 +570,9 @@ export class GatewardenVarkan implements BossEnemy {
       transitionTitle: '방패를 버린 맹세의 칼날',
       victoryKicker: '서약의 문이 열렸습니다',
       victoryTitle: '문지기 격파',
+      counterable: this.getCounterSnapshot().active,
+      counterProgress: this.getCounterSnapshot().progress,
+      counterDowned: this.counterDowned,
     };
   }
 
@@ -592,6 +604,38 @@ export class GatewardenVarkan implements BossEnemy {
 
   setAttackAllowed(allowed: boolean): void {
     this.attackAllowed = allowed;
+  }
+
+  getCounterSnapshot(): BossCounterSnapshot {
+    const profile = ATTACKS[this.attack];
+    const active = this.state === 'windup'
+      && (this.attack === 'shieldRush' || this.attack === 'leapSlam')
+      && this.stateTimer >= profile.windup * 0.42
+      && this.stateTimer <= profile.windup * 0.82;
+    const progress = active
+      ? THREE.MathUtils.clamp(
+        (this.stateTimer - profile.windup * 0.42) / Math.max(0.001, profile.windup * 0.4),
+        0,
+        1,
+      )
+      : 0;
+    return { active, progress, downed: this.counterDowned };
+  }
+
+  receiveCounter(): EnemyDamageResult {
+    if (!this.getCounterSnapshot().active) return 'ignored';
+    this.counterDowned = true;
+    this.state = 'stagger';
+    this.stateTimer = 0;
+    this.poise = this.maxPoise;
+    this.hitFlash = 1.2;
+    this.attackQueue.length = 0;
+    this.impactVelocity.addScaledVector(this.forward, -2.2);
+    return 'broken';
+  }
+
+  consumeSummonRequest(): BossSummonRequest | null {
+    return null;
   }
 
   receiveParry(): EnemyDamageResult {
@@ -629,7 +673,7 @@ export class GatewardenVarkan implements BossEnemy {
       return 'hit';
     }
 
-    const damageScale = this.phase === 1 ? 0.82 : 1;
+    const damageScale = (this.phase === 1 ? 0.82 : 1) * (this.counterDowned ? 1.5 : 1);
     this.health = Math.max(0, this.health - damage * damageScale);
     this.poise += poiseDamage * (this.phase === 1 ? 0.68 : 1);
     this.hitFlash = 1;

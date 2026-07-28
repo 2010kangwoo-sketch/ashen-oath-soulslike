@@ -7,8 +7,10 @@ import RAPIER, {
 import type { AudioDirector, SwingWeight } from '../audio/AudioDirector';
 import type {
   AttackPulse,
+  BossCounterSnapshot,
   BossPresentationEvent,
   BossSnapshot,
+  BossSummonRequest,
   EnemyDamageResult,
   LockTargetSnapshot,
 } from '../combat/CombatTypes';
@@ -164,6 +166,7 @@ export class AshenOathkeeper implements BossEnemy {
   private safeLane = 0;
   private teleported = false;
   private highContrastTelegraphs = false;
+  private counterDowned = false;
 
   constructor(
     scene: THREE.Scene,
@@ -334,6 +337,7 @@ export class AshenOathkeeper implements BossEnemy {
     this.presentationEvent = null;
     this.phaseBreakTarget = 2;
     this.phaseBreakTriggered = false;
+    this.counterDowned = false;
     this.teleported = false;
     this.attackQueue.length = 0;
     this.impactVelocity.set(0, 0, 0);
@@ -391,7 +395,9 @@ export class AshenOathkeeper implements BossEnemy {
       this.stateTimer += delta;
       this.horizontalStep.addScaledVector(this.impactVelocity, delta);
       this.impactVelocity.multiplyScalar(Math.exp(-7.5 * delta));
-      if (this.stateTimer >= (this.phase === 3 ? 0.72 : 0.9)) {
+      const staggerDuration = this.counterDowned ? 2.85 : (this.phase === 3 ? 0.72 : 0.9);
+      if (this.stateTimer >= staggerDuration) {
+        this.counterDowned = false;
         this.state = 'duel';
         this.stateTimer = -0.22;
         this.poise = 0;
@@ -413,12 +419,15 @@ export class AshenOathkeeper implements BossEnemy {
   updateVisual(delta: number): void {
     this.visualTime += delta;
     this.hitFlash = Math.max(0, this.hitFlash - delta * 4.5);
+    const counterActive = this.getCounterSnapshot().active;
     this.root.rotation.y = this.facingYaw;
     this.updatePose(delta);
     this.updateMaterials();
     this.updateTelegraphs();
     this.updateEchoes(delta);
     this.updateFallingBlades(delta);
+    this.eyeMaterial.emissive.setHex(counterActive ? 0x46dbff : 0x7f1b25);
+    if (counterActive) this.eyeMaterial.emissiveIntensity = Math.max(this.eyeMaterial.emissiveIntensity, 6.4);
   }
 
   consumeAttackPulse(): AttackPulse | null {
@@ -474,6 +483,9 @@ export class AshenOathkeeper implements BossEnemy {
       mechanicHint: this.mechanicHint || undefined,
       mechanicProgress: this.mechanicName ? this.mechanicProgress : undefined,
       mechanicDanger: this.mechanicDanger,
+      counterable: this.getCounterSnapshot().active,
+      counterProgress: this.getCounterSnapshot().progress,
+      counterDowned: this.counterDowned,
     };
   }
 
@@ -507,6 +519,39 @@ export class AshenOathkeeper implements BossEnemy {
     this.attackAllowed = allowed;
   }
 
+  getCounterSnapshot(): BossCounterSnapshot {
+    const profile = ATTACKS[this.attack];
+    const active = this.state === 'windup'
+      && (this.attack === 'pursuitThrust' || this.attack === 'shadowStep')
+      && this.stateTimer >= profile.windup * 0.38
+      && this.stateTimer <= profile.windup * 0.78;
+    const progress = active
+      ? THREE.MathUtils.clamp(
+        (this.stateTimer - profile.windup * 0.38) / Math.max(0.001, profile.windup * 0.4),
+        0,
+        1,
+      )
+      : 0;
+    return { active, progress, downed: this.counterDowned };
+  }
+
+  receiveCounter(): EnemyDamageResult {
+    if (!this.getCounterSnapshot().active) return 'ignored';
+    this.counterDowned = true;
+    this.state = 'stagger';
+    this.stateTimer = 0;
+    this.poise = this.maxPoise;
+    this.hitFlash = 1.25;
+    this.attackQueue.length = 0;
+    this.impactVelocity.addScaledVector(this.forward, -2.0);
+    this.clearMechanic();
+    return 'broken';
+  }
+
+  consumeSummonRequest(): BossSummonRequest | null {
+    return null;
+  }
+
   receiveParry(): EnemyDamageResult {
     if (!this.isActive() || this.state === 'phaseBreak' || this.state === 'intro') return 'ignored';
     const gain = this.phase === 1 ? 54 : this.phase === 2 ? 42 : 28;
@@ -526,7 +571,8 @@ export class AshenOathkeeper implements BossEnemy {
 
   receiveDamage(damage: number, poiseDamage: number, impactDirection: THREE.Vector3): EnemyDamageResult {
     if (!this.isActive() || this.state === 'phaseBreak' || this.state === 'intro') return 'ignored';
-    const damageScale = this.phase === 1 ? 0.88 : this.phase === 2 ? 0.96 : 1;
+    const damageScale = (this.phase === 1 ? 0.88 : this.phase === 2 ? 0.96 : 1)
+      * (this.counterDowned ? 1.5 : 1);
     this.health = Math.max(0, this.health - damage * damageScale);
     this.poise += poiseDamage * (this.phase === 3 ? 0.68 : 0.86);
     this.hitFlash = 1;

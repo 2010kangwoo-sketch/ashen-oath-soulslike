@@ -11,6 +11,9 @@ export type KnightVisualState =
   | 'light3'
   | 'heavyCharge'
   | 'heavy'
+  | 'ashStep'
+  | 'oathCounter'
+  | 'cinderArc'
   | 'execute'
   | 'heal'
   | 'guard'
@@ -262,6 +265,7 @@ export class AshenKnightVisual {
     let swordY = 0;
     let swordZ = -0.18 - speedRatio * 0.055 + strideSin * 0.014;
     let trailOpacity = 0;
+    let trailColor = 0xd8c092;
 
     if (state === 'dodge') {
       const roll = actionProgress * Math.PI * 2;
@@ -347,6 +351,75 @@ export class AshenKnightVisual {
       swordZ = THREE.MathUtils.lerp(-0.24, 0.1, smash);
       headX = THREE.MathUtils.lerp(-0.1, 0.08, smash);
       trailOpacity = attackTrail(actionProgress, 0.45, 0.72) * 1.25;
+    } else if (state === 'ashStep') {
+      const crouch = THREE.MathUtils.smoothstep(actionProgress, 0, 0.18);
+      const cut = THREE.MathUtils.smoothstep(actionProgress, 0.16, 0.48);
+      const recover = THREE.MathUtils.smoothstep(actionProgress, 0.62, 1);
+      torsoX = 0.36 - recover * 0.24;
+      torsoY = THREE.MathUtils.lerp(-0.58, 0.72, cut) - recover * 0.18;
+      torsoZ = -0.22 * crouch + 0.18 * cut;
+      pelvisY = THREE.MathUtils.lerp(-0.24, 0.18, cut);
+      chestY = THREE.MathUtils.lerp(-0.2, 0.3, cut);
+      leftLegX = 0.44 - recover * 0.25;
+      rightLegX = -0.32 + recover * 0.2;
+      leftKneeX = 0.38 * crouch;
+      rightKneeX = 0.2 * crouch;
+      rightArmX = THREE.MathUtils.lerp(-2.18, 0.52, cut);
+      rightArmZ = THREE.MathUtils.lerp(-0.72, 0.76, cut);
+      rightElbowX = THREE.MathUtils.lerp(-0.62, 0.08, cut);
+      leftArmX = THREE.MathUtils.lerp(-0.86, -0.18, cut);
+      swordZ = THREE.MathUtils.lerp(-1.18, 0.74, cut);
+      headX = -0.12;
+      headY = THREE.MathUtils.lerp(0.15, -0.1, cut);
+      trailOpacity = attackTrail(actionProgress, 0.14, 0.54) * 1.3;
+      trailColor = 0x91cfe0;
+    } else if (state === 'oathCounter') {
+      const brace = THREE.MathUtils.smoothstep(actionProgress, 0, 0.28);
+      const snap = THREE.MathUtils.smoothstep(actionProgress, 0.28, 0.56);
+      const settleBack = THREE.MathUtils.smoothstep(actionProgress, 0.7, 1);
+      torsoX = THREE.MathUtils.lerp(0.04, 0.25, brace) - settleBack * 0.13;
+      torsoY = THREE.MathUtils.lerp(-0.46, 0.44, snap);
+      chestY = THREE.MathUtils.lerp(-0.16, 0.22, snap);
+      pelvisZ = -0.08 * brace;
+      leftLegX = 0.24 * brace;
+      rightLegX = -0.18 * brace;
+      leftKneeX = 0.22 * brace;
+      rightArmX = THREE.MathUtils.lerp(-1.82, 0.22, snap);
+      rightArmZ = THREE.MathUtils.lerp(-0.78, 0.42, snap);
+      rightElbowX = THREE.MathUtils.lerp(-0.68, 0.1, snap);
+      leftArmX = THREE.MathUtils.lerp(-1.0, -0.26, snap);
+      leftArmZ = -0.38 * brace;
+      swordZ = THREE.MathUtils.lerp(-1.08, 0.36, snap);
+      headY = THREE.MathUtils.lerp(0.14, -0.08, snap);
+      trailOpacity = attackTrail(actionProgress, 0.25, 0.58) * 1.18;
+      trailColor = 0x7ee7ff;
+    } else if (state === 'cinderArc') {
+      const windup = THREE.MathUtils.smoothstep(actionProgress, 0, 0.18);
+      const spin = THREE.MathUtils.smoothstep(actionProgress, 0.16, 0.82);
+      const release = THREE.MathUtils.smoothstep(actionProgress, 0.78, 1);
+      const rotationAngle = spin * Math.PI * 4.2;
+      const rotationWave = Math.sin(rotationAngle);
+      const counterWave = Math.sin(rotationAngle + Math.PI * 0.5);
+      torsoX = 0.17 + counterWave * 0.1 - release * 0.08;
+      torsoY = rotationWave * 0.82;
+      chestY = Math.sin(rotationAngle + 0.34) * 0.42;
+      pelvisY = Math.sin(rotationAngle - 0.28) * 0.24;
+      torsoZ = rotationWave * 0.18;
+      leftLegX = 0.22 + rotationWave * 0.13;
+      rightLegX = -0.18 - rotationWave * 0.13;
+      leftKneeX = 0.16 * windup;
+      rightKneeX = 0.2 * windup;
+      rightArmX = -1.42 + counterWave * 0.38;
+      rightArmZ = -0.72 + rotationWave * 0.42;
+      rightElbowX = -0.38;
+      leftArmX = -0.76 + Math.sin(rotationAngle + 1.2) * 0.24;
+      swordZ = -0.92 + rotationWave * 0.22;
+      swordY = rotationWave * 0.24;
+      headY = -rotationWave * 0.28;
+      trailOpacity = actionProgress > 0.14 && actionProgress < 0.9
+        ? 0.82 + Math.sin(actionProgress * Math.PI * 6) * 0.18
+        : 0;
+      trailColor = 0xff8a45;
     } else if (state === 'heal') {
       const raise = THREE.MathUtils.smoothstep(actionProgress, 0.04, 0.38);
       const drink = THREE.MathUtils.smoothstep(actionProgress, 0.36, 0.68);
@@ -457,6 +530,7 @@ export class AshenKnightVisual {
     this.sword.rotation.z = THREE.MathUtils.lerp(this.sword.rotation.z, swordZ, settle);
 
     const trailMaterial = this.swordTrail.material as THREE.MeshBasicMaterial;
+    trailMaterial.color.setHex(trailColor);
     trailMaterial.opacity += (trailOpacity - trailMaterial.opacity) * (1 - Math.exp(-24 * delta));
     this.swordTrail.scale.x = 0.8 + trailOpacity * 0.35;
 
@@ -468,6 +542,9 @@ export class AshenKnightVisual {
         + THREE.MathUtils.clamp(this.speedAcceleration * 0.012, -0.12, 0.18)
         + (state === 'dodge' ? 0.4 : 0)
         + (state === 'heavy' || state === 'execute' ? 0.16 : 0)
+        + (state === 'ashStep' ? 0.34 : 0)
+        + (state === 'oathCounter' ? 0.14 : 0)
+        + (state === 'cinderArc' ? 0.28 + Math.sin(actionProgress * Math.PI * 4) * 0.1 : 0)
         + (state === 'heal' ? 0.05 : 0)
         + (state === 'heavyCharge' ? chargeRatio * 0.08 : 0);
       panel.rotation.z = -turnRate * 0.017 + (index - 3) * 0.01;
@@ -603,8 +680,11 @@ export class AshenKnightVisual {
     chargeRatio: number,
   ): void {
     const cappedDelta = Math.min(delta, 1 / 30);
-    const dodgeImpulse = state === 'dodge' ? Math.sin(actionProgress * Math.PI) * 0.72 : 0;
+    const dodgeImpulse = state === 'dodge' || state === 'ashStep'
+      ? Math.sin(actionProgress * Math.PI) * (state === 'ashStep' ? 0.92 : 0.72)
+      : 0;
     const strikeImpulse = state.startsWith('light') || state === 'heavy' || state === 'execute'
+      || state === 'oathCounter' || state === 'cinderArc'
       ? Math.sin(actionProgress * Math.PI) * 0.24
       : 0;
     const staggerImpulse = state === 'stagger' ? Math.sin(actionProgress * Math.PI) * -0.34 : 0;

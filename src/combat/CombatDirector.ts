@@ -17,6 +17,7 @@ import type {
   AttackPulse,
   BossPresentationEvent,
   BossSnapshot,
+  BossSummonRequest,
   EnemyDamageResult,
   LockTargetSnapshot,
 } from './CombatTypes';
@@ -39,6 +40,7 @@ export interface CombatSaveState {
 
 export class CombatDirector {
   private readonly regularEnemies: CombatEnemy[];
+  private readonly summonedEnemies: AshenHound[];
   private readonly varkan: GatewardenVarkan;
   private readonly widow: BellDevouringWidow;
   private readonly oathkeeper: AshenOathkeeper;
@@ -80,12 +82,22 @@ export class CombatDirector {
       new BellKeeper(scene, physics, 'bell-warden', '정예 · 검은 종의 수호자', new THREE.Vector3(23.5, 3.56, -53.8), audio, true),
       new AshenSentinel(scene, physics, 'oathbound-captain', '정예 · 서약대장', new THREE.Vector3(0, 1.62, -72.8), audio, 2),
     ];
+    this.summonedEnemies = Array.from({ length: 4 }, (_, index) => new AshenHound(
+      scene,
+      physics,
+      `widow-broodling-${index + 1}`,
+      '과부의 잿빛 새끼',
+      new THREE.Vector3(0, -80, -151.5),
+      audio,
+      index % 2 === 0 ? 1 : -1,
+      true,
+    ));
     this.varkan = new GatewardenVarkan(scene, physics, new THREE.Vector3(0, 3.2, -105.5), audio);
     this.widow = new BellDevouringWidow(scene, physics, new THREE.Vector3(0, 2.78, -151.5), audio);
     this.oathkeeper = new AshenOathkeeper(scene, physics, new THREE.Vector3(0, 2.72, -207.5), audio);
     this.bosses = [this.varkan, this.widow, this.oathkeeper];
     this.presentedBoss = this.varkan;
-    this.enemies = [...this.regularEnemies, ...this.bosses];
+    this.enemies = [...this.regularEnemies, ...this.summonedEnemies, ...this.bosses];
   }
 
   handleTargeting(input: InputController, player: PlayerController, cameraForward: THREE.Vector3): void {
@@ -125,6 +137,7 @@ export class CombatDirector {
       this.executingEnemy = null;
       if (this.activeBoss?.isEncounterActive()) this.activeBoss.abortEncounter();
       this.activeBoss = null;
+      this.deactivateSummons();
       for (const enemy of this.enemies) {
         while (enemy.consumeAttackPulse()) {
           // No queued attack is allowed to survive the death transition.
@@ -135,12 +148,30 @@ export class CombatDirector {
 
     this.coordinateAttackSlots();
     const activeEnemies: readonly CombatEnemy[] = this.activeBoss?.isEncounterActive()
-      ? [this.activeBoss]
+      ? [this.activeBoss, ...this.summonedEnemies.filter((enemy) => enemy.isActive())]
       : this.regularEnemies;
     for (const enemy of activeEnemies) enemy.fixedUpdate(delta, this.playerPosition);
 
-    const playerPulse = player.consumeAttackPulse();
-    if (playerPulse) this.resolvePlayerAttack(playerPulse);
+    if (this.activeBoss?.isEncounterActive()) {
+      let summonRequest = this.activeBoss.consumeSummonRequest();
+      while (summonRequest) {
+        this.spawnSummons(summonRequest);
+        summonRequest = this.activeBoss.consumeSummonRequest();
+      }
+    }
+
+    let skillEvent = player.consumeSkillEvent();
+    while (skillEvent) {
+      this.effects.spawnSkill(skillEvent);
+      if (skillEvent.phase === 'cast') this.audio.skill(skillEvent.skillId);
+      skillEvent = player.consumeSkillEvent();
+    }
+
+    let playerPulse = player.consumeAttackPulse();
+    while (playerPulse) {
+      this.resolvePlayerAttack(playerPulse);
+      playerPulse = player.consumeAttackPulse();
+    }
 
     for (const enemy of activeEnemies) {
       if (player.isDead()) break;
@@ -188,6 +219,7 @@ export class CombatDirector {
     this.widowDefeated = false;
     this.oathkeeperDefeated = false;
     for (const enemy of this.regularEnemies) enemy.reset();
+    this.deactivateSummons();
     this.varkan.resetEncounter();
     this.widow.resetEncounter();
     this.oathkeeper.resetEncounter();
@@ -202,6 +234,7 @@ export class CombatDirector {
     this.pendingAshReward = 0;
     this.rewardedEnemies.clear();
     for (const enemy of this.regularEnemies) enemy.reset();
+    this.deactivateSummons();
     if (!this.varkanDefeated) this.varkan.resetEncounter();
     else this.varkan.keepDefeated();
     if (!this.widowDefeated) this.widow.resetEncounter();
@@ -270,7 +303,11 @@ export class CombatDirector {
   }
 
   getBossSnapshot(): BossSnapshot {
-    return (this.activeBoss ?? this.presentedBoss).getBossSnapshot();
+    const snapshot = (this.activeBoss ?? this.presentedBoss).getBossSnapshot();
+    return {
+      ...snapshot,
+      summonedAdds: this.summonedEnemies.filter((enemy) => enemy.isActive()).length,
+    };
   }
 
   consumeBossPresentationEvent(): BossPresentationEvent | null {
@@ -359,6 +396,7 @@ export class CombatDirector {
   }
 
   private activateBoss(boss: BossEnemy): void {
+    this.deactivateSummons();
     this.activeBoss = boss;
     this.presentedBoss = boss;
     boss.activateEncounter();
@@ -376,6 +414,21 @@ export class CombatDirector {
     if (this.activeBoss?.isEncounterActive()) {
       this.activeBoss.setAttackAllowed(true);
       for (const enemy of this.regularEnemies) enemy.setAttackAllowed(false);
+      const rankedSummons = this.summonedEnemies
+        .filter((enemy) => enemy.isActive())
+        .map((enemy) => {
+          enemy.getPosition(this.enemyPosition);
+          return { enemy, distanceSquared: this.enemyPosition.distanceToSquared(this.playerPosition) };
+        })
+        .sort((a, b) => a.distanceSquared - b.distanceSquared);
+      let summonSlotAvailable = true;
+      for (const entry of rankedSummons) {
+        const committed = entry.enemy.isCommittedAttack();
+        const closeEnough = entry.distanceSquared <= 42.25;
+        const allowed = committed || (summonSlotAvailable && closeEnough);
+        entry.enemy.setAttackAllowed(allowed);
+        if (allowed) summonSlotAvailable = false;
+      }
       return;
     }
 
@@ -451,10 +504,24 @@ export class CombatDirector {
       if (distance > pulse.range || verticalDifference > GAME_CONFIG.combat.hitHeightTolerance || distance < 0.001) continue;
       this.toTarget.multiplyScalar(1 / distance);
       if (pulse.forward.dot(this.toTarget) < pulse.arcCos) continue;
+      const boss = this.bosses.includes(enemy as BossEnemy) ? enemy as BossEnemy : null;
+      let countered = false;
+      if (boss && boss === this.activeBoss && (pulse.counterPower ?? 0) > 0 && boss.getCounterSnapshot().active) {
+        const counterResult = boss.receiveCounter();
+        countered = counterResult === 'broken';
+        if (countered) {
+          const counterPosition = boss.getLockSnapshot().position.clone();
+          this.effects.spawnCounter(counterPosition);
+          this.audio.counterSuccess();
+          this.cameraImpulse = Math.max(this.cameraImpulse, 1.35);
+          this.hitStop = Math.max(this.hitStop, 0.16);
+          this.lockedEnemy = boss;
+        }
+      }
       const result = enemy.receiveDamage(pulse.damage, pulse.poiseDamage, pulse.forward);
-      if (result === 'ignored') continue;
+      if (result === 'ignored' && !countered) continue;
       const hitPosition = enemy.getLockSnapshot().position.clone();
-      this.resolvePlayerHitFeedback(result, hitPosition, pulse, enemy, true);
+      this.resolvePlayerHitFeedback(result === 'ignored' ? 'hit' : result, hitPosition, pulse, enemy, true);
       hitCount += 1;
     }
     if (hitCount === 0) this.cameraImpulse = Math.max(this.cameraImpulse, 0.045);
@@ -498,11 +565,43 @@ export class CombatDirector {
       if (enemy === this.widow) this.widowDefeated = true;
       if (enemy === this.oathkeeper) this.oathkeeperDefeated = true;
       this.activeBoss = null;
+      this.deactivateSummons();
       this.lockedEnemy = null;
       this.executingEnemy = null;
       this.cameraImpulse = Math.max(this.cameraImpulse, enemy === this.oathkeeper ? 1.85 : enemy === this.widow ? 1.55 : 1.25);
       this.hitStop = Math.max(this.hitStop, enemy === this.oathkeeper ? 0.3 : enemy === this.widow ? 0.24 : 0.2);
     }
+  }
+
+
+  private spawnSummons(request: BossSummonRequest): void {
+    const available = this.summonedEnemies.filter((enemy) => !enemy.isActive());
+    const count = Math.min(request.count, available.length);
+    if (count <= 0) return;
+    const baseAngle = Math.atan2(
+      this.playerPosition.z - request.origin.z,
+      this.playerPosition.x - request.origin.x,
+    ) + Math.PI;
+    for (let index = 0; index < count; index += 1) {
+      const spread = count === 1 ? 0 : (index / count) * Math.PI * 2;
+      const angle = baseAngle + spread + (index % 2 === 0 ? 0.18 : -0.18);
+      const radius = 5.2 + (index % 2) * 1.1;
+      const position = new THREE.Vector3(
+        request.origin.x + Math.cos(angle) * radius,
+        request.origin.y + 0.48,
+        request.origin.z + Math.sin(angle) * radius,
+      );
+      const summon = available[index];
+      if (!summon) continue;
+      summon.activateSummonAt(position, index % 2 === 0 ? 1 : -1);
+      this.effects.spawnSummon(position, request.kind);
+    }
+    this.audio.bossSummon(request.kind);
+    this.cameraImpulse = Math.max(this.cameraImpulse, 0.52);
+  }
+
+  private deactivateSummons(): void {
+    for (const enemy of this.summonedEnemies) enemy.deactivateSummon();
   }
 
   private resolveEnemyAttack(
