@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import RAPIER, { type Collider, type RigidBody } from '@dimforge/rapier3d-compat';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
+import type { QualityPreset } from '../settings/GameSettings';
 import { AtmosphereSystem } from './AtmosphereSystem';
 import { SurfaceFactory } from './SurfaceFactory';
 
@@ -27,6 +28,7 @@ export class CathedralApproach {
   private readonly atmosphere: AtmosphereSystem;
   private readonly dynamicDebris: DynamicDebris[] = [];
   private readonly banners: THREE.Mesh[] = [];
+  private readonly wind = new THREE.Vector3();
   private readonly bossFogPlanes: THREE.Mesh[] = [];
   private readonly bossFogGroup = new THREE.Group();
   private readonly bossExitGate = new THREE.Group();
@@ -70,6 +72,7 @@ export class CathedralApproach {
     this.atmosphere = new AtmosphereSystem(scene);
 
     this.createGroundComposition();
+    this.createTerrainCohesion();
     this.createSouthGate();
     this.createProcessionalStairs();
     this.createNaveForecourt();
@@ -89,13 +92,14 @@ export class CathedralApproach {
     this.createLightingAccents();
   }
 
-  update(delta: number): void {
+  update(delta: number, focus: THREE.Vector3): void {
     this.elapsed += delta;
-    this.atmosphere.update(delta);
+    this.atmosphere.update(delta, focus);
+    this.atmosphere.copyWind(this.wind);
     for (const banner of this.banners) {
       const phase = Number(banner.userData.phase ?? 0);
-      banner.rotation.z = Math.sin(this.elapsed * 0.72 + phase) * 0.045;
-      banner.rotation.x = Math.sin(this.elapsed * 1.1 + phase * 0.7) * 0.025;
+      banner.rotation.z = Math.sin(this.elapsed * 0.72 + phase) * 0.045 + this.wind.x * 0.018;
+      banner.rotation.x = Math.sin(this.elapsed * 1.1 + phase * 0.7) * 0.025 + this.wind.z * 0.012;
     }
     this.updateBossArena(delta);
     this.updateWidowArena(delta);
@@ -114,6 +118,22 @@ export class CathedralApproach {
     }
   }
 
+
+  setPresentationQuality(quality: QualityPreset, performanceTier: 0 | 1 | 2): void {
+    this.atmosphere.setQuality(quality, performanceTier);
+  }
+
+  copyMoonColor(target: THREE.Color): THREE.Color {
+    return this.atmosphere.copyMoonColor(target);
+  }
+
+  getMoonIntensity(): number {
+    return this.atmosphere.getMoonIntensity();
+  }
+
+  getExposure(): number {
+    return this.atmosphere.getExposure();
+  }
 
   setBossEncounterState(
     varkanActive: boolean,
@@ -147,6 +167,85 @@ export class CathedralApproach {
       debris.body.applyTorqueImpulse({ x: dz * 0.1, y: force * 0.16, z: -dx * 0.1 }, true);
       debris.cooldown = 0.2;
     }
+  }
+
+  private createTerrainCohesion(): void {
+    const rockGeometry = new THREE.DodecahedronGeometry(0.72, 0);
+    const rockMaterial = this.basalt.clone();
+    rockMaterial.roughness = 0.94;
+    const placements: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
+      [-18, 0.2, 18, 1.7, 0.75, 1.2], [17, 0.18, 11, 1.25, 0.62, 1.6],
+      [-21, 0.15, -4, 1.9, 0.8, 0.8], [20, 0.17, -18, 1.45, 0.65, 1.35],
+      [-16, 0.22, -38, 1.65, 0.72, 1.1], [16, 0.24, -47, 1.8, 0.78, 0.9],
+      [-14.5, 1.3, -91, 1.5, 0.68, 1.25], [14.2, 1.3, -98, 1.75, 0.7, 0.85],
+      [-13.8, 1.3, -111, 1.2, 0.62, 1.45], [13.7, 1.3, -116, 1.55, 0.7, 1.1],
+      [-13.5, 1.3, -141, 1.45, 0.68, 1.1], [13.4, 1.3, -148, 1.8, 0.72, 0.95],
+      [-14.1, 1.3, -161, 1.2, 0.62, 1.55], [14.0, 1.3, -166, 1.5, 0.67, 1.2],
+      [-15.2, 1.3, -197, 1.65, 0.72, 1.05], [15.0, 1.3, -204, 1.25, 0.62, 1.5],
+      [-14.8, 1.3, -218, 1.8, 0.75, 0.9], [14.4, 1.3, -226, 1.45, 0.65, 1.25],
+    ];
+    const rocks = new THREE.InstancedMesh(rockGeometry, rockMaterial, placements.length);
+    rocks.name = 'cohesive-rock-banks';
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    const euler = new THREE.Euler();
+    placements.forEach(([x, y, z, sx, sy, sz], index) => {
+      position.set(x, y, z);
+      euler.set((index % 4) * 0.17, index * 0.63, (index % 3 - 1) * 0.12);
+      quaternion.setFromEuler(euler);
+      scale.set(sx, sy, sz);
+      matrix.compose(position, quaternion, scale);
+      rocks.setMatrixAt(index, matrix);
+    });
+    rocks.instanceMatrix.needsUpdate = true;
+    rocks.castShadow = true;
+    rocks.receiveShadow = true;
+    this.group.add(rocks);
+
+    const ashMaterial = new THREE.MeshStandardMaterial({
+      color: 0x383735,
+      roughness: 1,
+      metalness: 0,
+      transparent: true,
+      opacity: 0.48,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+    });
+    const ashPatches: ReadonlyArray<readonly [number, number, number, number, number]> = [
+      [-8.5, 0.13, 13, 5.5, 2.4], [8.8, 0.13, -8, 4.8, 2.1],
+      [-10.5, 0.13, -31, 6.2, 2.7], [9.5, 0.13, -48, 5.2, 2.2],
+      [-8.8, 1.23, -95, 4.7, 2.0], [9.2, 1.23, -111, 5.4, 2.2],
+      [-8.4, 1.23, -145, 5.6, 2.4], [8.6, 1.23, -161, 4.8, 2.1],
+      [-9.4, 1.23, -200, 5.8, 2.5], [8.8, 1.23, -219, 5.1, 2.2],
+    ];
+    for (let index = 0; index < ashPatches.length; index += 1) {
+      const patch = ashPatches[index]!;
+      const mesh = new THREE.Mesh(new THREE.CircleGeometry(1, 20), ashMaterial.clone());
+      mesh.name = `ash-drift-${index + 1}`;
+      mesh.position.set(patch[0], patch[1], patch[2]);
+      mesh.scale.set(patch[3], patch[4], 1);
+      mesh.rotation.set(-Math.PI / 2, 0, index * 0.47);
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+    }
+
+    const rootMaterial = new THREE.MeshStandardMaterial({ color: 0x2c241e, roughness: 0.96, metalness: 0.01 });
+    const rootSegments: ReadonlyArray<readonly [number, number, number, number]> = [
+      [-11, 0.35, -52, 0.42], [11, 0.34, -74, -0.38],
+      [-12.2, 1.48, -130, 0.34], [12.1, 1.46, -174, -0.36],
+    ];
+    rootSegments.forEach(([x, y, z, rotation], index) => {
+      const root = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.42, 8.5, 8), rootMaterial);
+      root.name = `weathered-root-${index + 1}`;
+      root.position.set(x, y, z);
+      root.rotation.set(Math.PI / 2.35, rotation, rotation * 0.4);
+      root.castShadow = true;
+      root.receiveShadow = true;
+      this.group.add(root);
+    });
   }
 
   private createGroundComposition(): void {

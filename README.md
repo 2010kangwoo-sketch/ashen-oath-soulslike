@@ -15,7 +15,8 @@
 - Production Pass 8: 최종 보스 재의 서약자, 3페이즈 검술·잔상·왕관 기믹, 재의 왕좌와 두 결말·크레디트
 - Production Pass 9: 시작 화면·일시정지·자동 저장·이어하기, 그래픽·음량·카메라·조작 안내 설정
 - Release Candidate Pass 10: 엔딩 저장·복귀, 브라우저 수명주기 보호, 접근성, 카메라 할당 최적화와 출시 회귀 검사
-- 현재 상태: 연결된 전 지역, 보스 3명, 두 결말과 저장·설정을 포함한 `1.0.0-rc.1` 출시 후보
+- Quality Assurance Pass 11: 화면 전환, 다중 카메라 충돌, 벡터 기반 방향 전환, 지역별 날씨·달빛·그림자와 단계형 성능 제어
+- 현재 상태: 연결된 전 지역, 보스 3명, 두 결말과 저장·설정을 포함한 `1.0.0-rc.2` 품질 보증 후보
 
 ## 출시 목표
 
@@ -31,6 +32,8 @@
 - `docs/ART_DIRECTION.md`
 - `docs/COMBAT_BOSS_BIBLE.md`
 - `docs/PRODUCTION_PASS_10.md`
+- `docs/PRODUCTION_PASS_11.md`
+- `docs/FINAL_QA_MATRIX.md`
 - `docs/RELEASE_VALIDATION.md`
 - `docs/TEN_PASS_ROADMAP.md`
 
@@ -73,4 +76,4 @@ npm run verify
 
 ## 배포
 
-`main` 브랜치에 푸시하면 GitHub Actions가 타입 검사, 프로덕션 빌드와 차수별 검증을 실행한 뒤 GitHub Pages에 배포합니다.
+`main` 브랜치에 푸시하면 GitHub Actions가 타입 검사, 프로덕션 빌드와 차수별 검증을 실행한 뒤 GitHub Pages에 배포합니다. Pass 12에서는 Q·E·R 기술과 보스 카운터·소환을, Pass 13에서는 완주·충돌·벽 관통·브라우저 회귀를 최종 검증합니다.

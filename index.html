@@ -23,6 +23,10 @@
         <p id="loading-label">빛과 그림자를 준비하는 중</p>
       </div>
 
+      <div id="screen-transition" class="screen-transition is-hidden" aria-hidden="true">
+        <span class="screen-transition-grain"></span>
+      </div>
+
       <section id="hud" class="hud is-hidden" aria-label="게임 정보">
         <div class="player-vitals" aria-label="플레이어 상태">
           <div class="vital-row"><span class="vital-icon health-icon"></span><div class="vital-track health"><span id="health-fill"></span></div></div>
@@ -151,6 +155,12 @@
           <p><span>동작</span><strong id="movement-status">대기</strong></p>
           <p><span>속도</span><strong id="speed-status">0.0 m/s</strong></p>
           <p><span>접지</span><strong id="grounded-status">공중</strong></p>
+          <p><span>프레임 시간</span><strong id="frame-time-status">-- ms</strong></p>
+          <p><span>렌더 비율</span><strong id="render-scale-status">100%</strong></p>
+          <p><span>효과 단계</span><strong id="effect-tier-status">0</strong></p>
+          <p><span>카메라 여유</span><strong id="camera-space-status">100%</strong></p>
+          <p><span>드로우콜</span><strong id="draw-call-status">--</strong></p>
+          <p><span>삼각형</span><strong id="triangle-status">--</strong></p>
         </div>
       </section>
 
@@ -169,7 +179,7 @@
             <button id="title-settings-button" type="button">설정</button>
           </div>
           <p id="save-summary" class="save-summary is-hidden"></p>
-          <p class="menu-build">RELEASE CANDIDATE · 1.0.0-RC.1</p>
+          <p class="menu-build">RELEASE CANDIDATE · 1.0.0-RC.2</p>
         </div>
       </section>
 

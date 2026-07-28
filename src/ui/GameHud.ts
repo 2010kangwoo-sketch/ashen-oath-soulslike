@@ -2,6 +2,7 @@ import type { Camera } from 'three';
 import type { BossPresentationEvent, BossSnapshot, LockTargetSnapshot } from '../combat/CombatTypes';
 import type { PlayerMotionState } from '../player/PlayerController';
 import type { EndingSnapshot, ProgressionSnapshot } from '../progression/ProgressionDirector';
+import type { FrameStats } from '../core/PerformanceGovernor';
 
 export class GameHud {
   private readonly root: HTMLElement;
@@ -11,6 +12,12 @@ export class GameHud {
   private readonly movementStatus: HTMLElement;
   private readonly speedStatus: HTMLElement;
   private readonly groundedStatus: HTMLElement;
+  private readonly frameTimeStatus: HTMLElement;
+  private readonly renderScaleStatus: HTMLElement;
+  private readonly effectTierStatus: HTMLElement;
+  private readonly cameraSpaceStatus: HTMLElement;
+  private readonly drawCallStatus: HTMLElement;
+  private readonly triangleStatus: HTMLElement;
   private readonly pointerHint: HTMLElement;
   private readonly healthFill: HTMLElement;
   private readonly staminaFill: HTMLElement;
@@ -73,6 +80,12 @@ export class GameHud {
     this.movementStatus = this.requireElement('movement-status');
     this.speedStatus = this.requireElement('speed-status');
     this.groundedStatus = this.requireElement('grounded-status');
+    this.frameTimeStatus = this.requireElement('frame-time-status');
+    this.renderScaleStatus = this.requireElement('render-scale-status');
+    this.effectTierStatus = this.requireElement('effect-tier-status');
+    this.cameraSpaceStatus = this.requireElement('camera-space-status');
+    this.drawCallStatus = this.requireElement('draw-call-status');
+    this.triangleStatus = this.requireElement('triangle-status');
     this.pointerHint = this.requireElement('pointer-hint');
     this.healthFill = this.requireElement('health-fill');
     this.staminaFill = this.requireElement('stamina-fill');
@@ -141,6 +154,24 @@ export class GameHud {
 
   setFps(fps: number): void {
     if (fps > 0) this.fpsStatus.textContent = `${fps} FPS`;
+  }
+
+
+  setPerformance(
+    stats: FrameStats,
+    resolutionScale: number,
+    effectTier: 0 | 1 | 2,
+    cameraCollisionRatio: number,
+    drawCalls: number,
+    triangles: number,
+  ): void {
+    if (stats.fps <= 0) return;
+    this.frameTimeStatus.textContent = `${stats.averageFrameMs.toFixed(1)} / ${stats.p95FrameMs.toFixed(1)} ms`;
+    this.renderScaleStatus.textContent = `${Math.round(resolutionScale * 100)}%`;
+    this.effectTierStatus.textContent = effectTier === 0 ? '전체' : effectTier === 1 ? '절약' : '최소';
+    this.cameraSpaceStatus.textContent = `${Math.round(cameraCollisionRatio * 100)}%`;
+    this.drawCallStatus.textContent = drawCalls.toLocaleString('ko-KR');
+    this.triangleStatus.textContent = triangles.toLocaleString('ko-KR');
   }
 
   setPlayerState(state: PlayerMotionState, speed: number, grounded: boolean): void {

@@ -18,12 +18,15 @@ import { GameHud } from '../ui/GameHud';
 import { GameMenu } from '../ui/GameMenu';
 import { CathedralApproach } from '../world/CathedralApproach';
 import { FrameMonitor } from './FrameMonitor';
+import { PerformanceGovernor, type FrameStats } from './PerformanceGovernor';
+import { ScreenTransition } from './ScreenTransition';
 import { LoadingReporter } from './LoadingReporter';
 
 export class Game {
   private readonly reporter = new LoadingReporter();
   private readonly hud = new GameHud();
   private readonly frameMonitor = new FrameMonitor();
+  private readonly performanceGovernor = new PerformanceGovernor();
   private readonly scene = new THREE.Scene();
   private readonly clock = new THREE.Clock();
   private readonly audio = new AudioDirector();
@@ -32,6 +35,10 @@ export class Game {
   private readonly cameraTarget = new THREE.Vector3();
   private readonly playerVelocity = new THREE.Vector3();
   private readonly playerPosition = new THREE.Vector3();
+  private readonly playerForward = new THREE.Vector3(0, 0, -1);
+  private readonly moonColor = new THREE.Color();
+  private readonly hemisphereSkyTarget = new THREE.Color();
+  private readonly hemisphereGroundTarget = new THREE.Color();
   private readonly planarForward = new THREE.Vector3();
   private readonly planarRight = new THREE.Vector3();
   private renderer!: THREE.WebGLRenderer;
@@ -45,9 +52,14 @@ export class Game {
   private combat!: CombatDirector;
   private progression!: ProgressionDirector;
   private menu!: GameMenu;
+  private screenTransition!: ScreenTransition;
   private endingTitleButton!: HTMLButtonElement;
   private endingNewGameButton!: HTMLButtonElement;
   private moon!: THREE.DirectionalLight;
+  private moonTarget!: THREE.Object3D;
+  private hemisphere!: THREE.HemisphereLight;
+  private heroFill!: THREE.SpotLight;
+  private heroFillTarget!: THREE.Object3D;
   private settings: GameSettings = DEFAULT_GAME_SETTINGS;
   private animationFrame = 0;
   private disposed = false;
@@ -58,9 +70,8 @@ export class Game {
   private playTimeSeconds = 0;
   private autosaveAccumulator = 0;
   private lastSaveFingerprint = '';
-  private adaptivePixelScale = 1;
-  private lowFpsDuration = 0;
-  private highFpsDuration = 0;
+  private performanceTier: 0 | 1 | 2 = 0;
+  private shadowFrame = 0;
   private contextLost = false;
   private readonly debugEnabled = new URLSearchParams(window.location.search).has('debug');
 
@@ -85,6 +96,7 @@ export class Game {
     this.progression = new ProgressionDirector(this.scene, this.physics, this.audio);
     this.cameraRig = new ThirdPersonCamera(this.camera, this.canvas, this.world.cameraCollisionObjects);
     this.pipeline = new RenderPipeline(this.renderer, this.scene, this.camera);
+    this.screenTransition = new ScreenTransition(this.requireElement('screen-transition'));
     this.menu = new GameMenu(this.settingsStore.load(), {
       onNewGame: () => this.startNewGame(),
       onContinue: () => this.continueGame(),
@@ -96,15 +108,21 @@ export class Game {
     this.endingTitleButton = this.requireButton('ending-title-button');
     this.endingNewGameButton = this.requireButton('ending-new-game-button');
     this.settings = this.settingsStore.load();
+    const initialPerformance = this.performanceGovernor.setQuality(this.settings.quality);
+    this.performanceTier = initialPerformance.effectTier;
+    this.world.setPresentationQuality(this.settings.quality, this.performanceTier);
+    this.pipeline.setPerformanceTier(this.performanceTier);
     this.applySettings(this.settings);
     this.resizeRenderer();
 
     this.player.getCameraTarget(this.cameraTarget);
     this.player.copyVelocity(this.playerVelocity);
+    this.player.copyForward(this.playerForward);
     this.cameraRig.update(
       1,
       this.cameraTarget,
       this.playerVelocity,
+      this.playerForward,
       0,
       { horizontal: 0, vertical: 0 },
       null,
@@ -170,11 +188,15 @@ export class Game {
   }
 
   private createLighting(): void {
-    const hemisphere = new THREE.HemisphereLight(0x8a9cad, 0x17120f, 0.95);
-    this.scene.add(hemisphere);
+    this.hemisphere = new THREE.HemisphereLight(0x91a6ba, 0x211a16, 1.08);
+    this.scene.add(this.hemisphere);
 
-    this.moon = new THREE.DirectionalLight(0xb8c7d8, 3.8);
+    this.moonTarget = new THREE.Object3D();
+    this.moonTarget.position.set(0, 2.2, 0);
+    this.scene.add(this.moonTarget);
+    this.moon = new THREE.DirectionalLight(0xc4d8ea, 4.1);
     this.moon.position.set(-24, 34, 18);
+    this.moon.target = this.moonTarget;
     this.moon.castShadow = true;
     this.moon.shadow.mapSize.set(GAME_CONFIG.renderer.shadowMapSize, GAME_CONFIG.renderer.shadowMapSize);
     this.moon.shadow.camera.left = -42;
@@ -187,10 +209,17 @@ export class Game {
     this.moon.shadow.normalBias = 0.025;
     this.scene.add(this.moon);
 
-    const cathedralGlow = new THREE.SpotLight(0xa36f43, 42, 92, Math.PI * 0.23, 0.72, 1.2);
+    const cathedralGlow = new THREE.SpotLight(0xb77b48, 46, 96, Math.PI * 0.23, 0.72, 1.2);
     cathedralGlow.position.set(0, 18, -36);
     cathedralGlow.target.position.set(0, 3, -9);
     this.scene.add(cathedralGlow, cathedralGlow.target);
+
+    this.heroFillTarget = new THREE.Object3D();
+    this.scene.add(this.heroFillTarget);
+    this.heroFill = new THREE.SpotLight(0xdde8f2, 9.5, 18, Math.PI * 0.32, 0.78, 1.35);
+    this.heroFill.castShadow = false;
+    this.heroFill.target = this.heroFillTarget;
+    this.scene.add(this.heroFill);
   }
 
   private bindEvents(): void {
@@ -218,7 +247,7 @@ export class Game {
       : this.settings.quality === 'cinematic'
         ? 1.8
         : 1.35;
-    return Math.min(window.devicePixelRatio, limit) * this.adaptivePixelScale;
+    return Math.min(window.devicePixelRatio, limit) * this.performanceGovernor.getState().resolutionScale;
   }
 
   private resizeRenderer(): void {
@@ -232,9 +261,10 @@ export class Game {
     const qualityChanged = this.settings.quality !== settings.quality;
     this.settings = settings;
     if (qualityChanged) {
-      this.adaptivePixelScale = 1;
-      this.lowFpsDuration = 0;
-      this.highFpsDuration = 0;
+      const state = this.performanceGovernor.setQuality(settings.quality);
+      this.performanceTier = state.effectTier;
+      this.world?.setPresentationQuality(settings.quality, this.performanceTier);
+      this.pipeline?.setPerformanceTier(this.performanceTier);
     }
     this.settingsStore.save(settings);
     this.menu?.setSettings(settings);
@@ -242,6 +272,7 @@ export class Game {
     const effectiveShake = settings.reducedMotion ? settings.cameraShake * 0.18 : settings.cameraShake;
     this.cameraRig?.setControlSettings(settings.mouseSensitivity, effectiveShake);
     this.pipeline?.setQuality(settings.quality);
+    this.world?.setPresentationQuality(settings.quality, this.performanceTier);
     this.pipeline?.setAccessibility(settings.reducedMotion, settings.highContrastTelegraphs);
     this.combat?.setHighContrastTelegraphs(settings.highContrastTelegraphs);
     this.hud.setControlHelpVisible(settings.showControlHelp);
@@ -253,6 +284,12 @@ export class Game {
         ? THREE.PCFShadowMap
         : THREE.PCFSoftShadowMap;
       this.moon.castShadow = true;
+      const shadowSize = settings.quality === 'performance' ? 1024 : settings.quality === 'cinematic' ? 2048 : 1536;
+      if (this.moon.shadow.mapSize.x !== shadowSize) {
+        this.moon.shadow.mapSize.set(shadowSize, shadowSize);
+        this.moon.shadow.map?.dispose();
+        this.moon.shadow.map = null;
+      }
       this.resizeRenderer();
     }
   }
@@ -265,7 +302,7 @@ export class Game {
   };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    if (event.repeat) return;
+    if (event.repeat || this.screenTransition?.isActive()) return;
     if (event.code === 'Escape') {
       event.preventDefault();
       if (this.menu.isSettingsVisible()) {
@@ -341,12 +378,17 @@ export class Game {
 
   private startNewGame(): void {
     this.audio.unlock();
-    this.saveStore.clear();
-    this.progression.startNewGame(this.player, this.combat);
-    this.playTimeSeconds = 0;
-    this.lastSaveFingerprint = '';
-    this.enterGameplay();
-    this.saveNow(true);
+    this.runScreenTransition(
+      () => {
+        this.saveStore.clear();
+        this.progression.startNewGame(this.player, this.combat);
+        this.playTimeSeconds = 0;
+        this.lastSaveFingerprint = '';
+        this.prepareGameplay();
+        this.saveNow(true);
+      },
+      () => this.finishGameplayTransition(),
+    );
   }
 
   private continueGame(): void {
@@ -356,31 +398,46 @@ export class Game {
       this.startNewGame();
       return;
     }
-    this.combat.restoreSaveState(save.combat);
-    this.progression.restoreSaveState(save.progression, this.player);
-    this.playTimeSeconds = Math.max(0, save.playTimeSeconds);
-    this.lastSaveFingerprint = '';
-    this.enterGameplay();
+    this.runScreenTransition(
+      () => {
+        this.combat.restoreSaveState(save.combat);
+        this.progression.restoreSaveState(save.progression, this.player);
+        this.playTimeSeconds = Math.max(0, save.playTimeSeconds);
+        this.lastSaveFingerprint = '';
+        this.prepareGameplay();
+      },
+      () => this.finishGameplayTransition(),
+    );
   }
 
-  private enterGameplay(): void {
+  private prepareGameplay(): void {
     this.gameActive = true;
-    this.paused = false;
+    this.paused = true;
     this.endingPresented = false;
     this.autosaveAccumulator = 0;
     this.pipeline.setEndingState(false, null);
     this.menu.hideAll();
     this.hud.setMenuSuppressed(false);
+    this.input.setEnabled(false);
+    this.cameraRig.setEnabled(false);
+    this.audio.setDucked(true);
+    const fatal = document.getElementById('fatal-error');
+    fatal?.classList.add('is-hidden');
+    this.snapCameraToPlayer();
+    this.clock.getDelta();
+  }
+
+  private finishGameplayTransition(): void {
+    if (!this.gameActive || this.progression.isEndingLocked()) return;
+    this.paused = false;
     this.input.setEnabled(true);
     this.cameraRig.setEnabled(true);
     this.audio.setDucked(false);
-    const fatal = document.getElementById('fatal-error');
-    fatal?.classList.add('is-hidden');
     this.clock.getDelta();
   }
 
   private pauseGame(): void {
-    if (!this.gameActive || this.paused) return;
+    if (!this.gameActive || this.paused || this.screenTransition.isActive()) return;
     this.paused = true;
     this.input.setEnabled(false);
     this.cameraRig.setEnabled(false);
@@ -391,7 +448,7 @@ export class Game {
   }
 
   private resumeGame(): void {
-    if (!this.gameActive) return;
+    if (!this.gameActive || this.screenTransition.isActive()) return;
     this.paused = false;
     this.menu.hideAll();
     this.hud.setMenuSuppressed(false);
@@ -402,22 +459,45 @@ export class Game {
   }
 
   private restartCheckpoint(): void {
-    this.progression.restartAtCheckpoint(this.player, this.combat);
-    this.hitStopRemaining = 0;
-    this.resumeGame();
-    this.saveNow(true);
+    if (!this.gameActive) return;
+    this.runScreenTransition(
+      () => {
+        this.progression.restartAtCheckpoint(this.player, this.combat);
+        this.hitStopRemaining = 0;
+        this.prepareGameplay();
+        this.saveNow(true);
+      },
+      () => this.finishGameplayTransition(),
+    );
   }
 
   private returnToTitle(): void {
     this.saveNow(false, true);
-    this.gameActive = false;
+    this.runScreenTransition(() => {
+      this.gameActive = false;
+      this.paused = true;
+      this.input.setEnabled(false);
+      this.cameraRig.setEnabled(false);
+      this.audio.setDucked(true);
+      this.hud.setMenuSuppressed(true);
+      this.pipeline.setEndingState(false, null);
+      this.menu.showTitle(this.saveStore.getSummary());
+    });
+  }
+
+  private runScreenTransition(action: () => void, complete?: () => void): void {
+    if (this.screenTransition.isActive()) return;
     this.paused = true;
     this.input.setEnabled(false);
     this.cameraRig.setEnabled(false);
     this.audio.setDucked(true);
-    this.hud.setMenuSuppressed(true);
-    this.pipeline.setEndingState(false, null);
-    this.menu.showTitle(this.saveStore.getSummary());
+    this.screenTransition.coverAndRun(action, 0.08, complete);
+  }
+
+  private snapCameraToPlayer(): void {
+    this.player.getCameraTarget(this.cameraTarget);
+    this.player.copyForward(this.playerForward);
+    this.cameraRig.snapBehind(this.playerForward, this.cameraTarget);
   }
 
   private saveNow(showIndicator: boolean, force = false): void {
@@ -451,30 +531,58 @@ export class Game {
   }
 
 
-  private updatePerformanceGovernor(fps: number, delta: number): void {
-    if (fps <= 0 || this.paused || !this.gameActive) return;
-    if (fps < 38) {
-      this.lowFpsDuration += delta;
-      this.highFpsDuration = 0;
-    } else if (fps > 55) {
-      this.highFpsDuration += delta;
-      this.lowFpsDuration = Math.max(0, this.lowFpsDuration - delta * 0.5);
-    } else {
-      this.lowFpsDuration = Math.max(0, this.lowFpsDuration - delta * 0.4);
-      this.highFpsDuration = 0;
+  private updatePerformanceGovernor(stats: FrameStats, delta: number): void {
+    const state = this.performanceGovernor.update(stats, delta, this.gameActive && !this.paused);
+    if (state.changed) {
+      this.performanceTier = state.effectTier;
+      this.world.setPresentationQuality(this.settings.quality, this.performanceTier);
+      this.pipeline.setPerformanceTier(this.performanceTier);
+      this.resizeRenderer();
     }
+    this.hud.setPerformance(
+      stats,
+      state.resolutionScale,
+      this.performanceTier,
+      this.cameraRig.getCollisionRatio(),
+      this.renderer.info.render.calls,
+      this.renderer.info.render.triangles,
+    );
+  }
 
-    if (this.lowFpsDuration >= 5 && this.adaptivePixelScale > 0.72) {
-      this.adaptivePixelScale = Math.max(0.72, this.adaptivePixelScale - 0.12);
-      this.lowFpsDuration = 0;
-      this.highFpsDuration = 0;
-      this.resizeRenderer();
-    } else if (this.highFpsDuration >= 14 && this.adaptivePixelScale < 1) {
-      this.adaptivePixelScale = Math.min(1, this.adaptivePixelScale + 0.08);
-      this.lowFpsDuration = 0;
-      this.highFpsDuration = 0;
-      this.resizeRenderer();
-    }
+  private updateLighting(delta: number): void {
+    this.world.copyMoonColor(this.moonColor);
+    const lightAlpha = 1 - Math.exp(-1.4 * delta);
+    this.moon.color.lerp(this.moonColor, lightAlpha);
+    this.moon.intensity += (this.world.getMoonIntensity() - this.moon.intensity) * lightAlpha;
+    this.hemisphereSkyTarget.copy(this.moonColor).multiplyScalar(0.78).offsetHSL(0, -0.08, 0.08);
+    this.hemisphereGroundTarget.copy(this.moonColor).multiplyScalar(0.18).offsetHSL(0.04, 0.08, -0.08);
+    this.hemisphere.color.lerp(this.hemisphereSkyTarget, lightAlpha);
+    this.hemisphere.groundColor.lerp(this.hemisphereGroundTarget, lightAlpha);
+
+    const shadowSpan = 84;
+    const shadowMapSize = Math.max(512, this.moon.shadow.mapSize.x);
+    const texelSize = shadowSpan / shadowMapSize;
+    const snappedX = Math.round(this.playerPosition.x / texelSize) * texelSize;
+    const snappedZ = Math.round(this.playerPosition.z / texelSize) * texelSize;
+    this.moonTarget.position.set(snappedX, this.playerPosition.y + 1.1, snappedZ);
+    this.moon.position.set(snappedX - 24, this.playerPosition.y + 34, snappedZ + 18);
+    this.moonTarget.updateMatrixWorld();
+
+    this.shadowFrame += 1;
+    const shadowInterval = this.performanceTier === 2 ? 4 : this.performanceTier === 1 ? 2 : 1;
+    this.renderer.shadowMap.autoUpdate = shadowInterval === 1;
+    if (shadowInterval > 1 && this.shadowFrame % shadowInterval === 0) this.renderer.shadowMap.needsUpdate = true;
+
+    this.heroFill.position.copy(this.camera.position).addScaledVector(this.planarRight, -0.9);
+    this.heroFill.position.y += 1.4;
+    this.heroFillTarget.position.copy(this.playerPosition);
+    this.heroFillTarget.position.y += 1.15;
+    this.heroFillTarget.updateMatrixWorld();
+    const fillTarget = this.settings.quality === 'performance' ? 6.2 : 8.5;
+    this.heroFill.intensity += (fillTarget - this.heroFill.intensity) * (1 - Math.exp(-4 * delta));
+
+    const exposureTarget = this.world.getExposure();
+    this.renderer.toneMappingExposure += (exposureTarget - this.renderer.toneMappingExposure) * (1 - Math.exp(-1.5 * delta));
   }
 
   private readonly animate = (): void => {
@@ -486,11 +594,14 @@ export class Game {
     const delta = Math.min(this.clock.getDelta(), 0.1);
     this.input.update();
     this.menu.update();
+    this.screenTransition.update(delta);
 
     if (!this.gameActive || this.paused) {
       const idleDelta = Math.min(delta, 1 / 30);
+      this.player.getWorldPosition(this.playerPosition);
       this.audio.update(idleDelta);
-      this.world.update(idleDelta * 0.35);
+      this.world.update(idleDelta * 0.35, this.playerPosition);
+      this.updateLighting(idleDelta * 0.5);
       this.player.updateVisual(idleDelta * 0.3);
       this.combat.updateVisual(idleDelta * 0.18);
       this.pipeline.render(idleDelta);
@@ -530,14 +641,16 @@ export class Game {
       bossWorldState.oathkeeperActive,
       bossWorldState.oathkeeperDefeated,
     );
-    this.world.update(delta);
+    this.player.getCameraTarget(this.cameraTarget);
+    this.player.copyVelocity(this.playerVelocity);
+    this.player.copyForward(this.playerForward);
+    this.player.getWorldPosition(this.playerPosition);
+    this.world.update(delta, this.playerPosition);
+    this.updateLighting(delta);
     this.player.updateVisual(presentationDelta);
     this.combat.updateVisual(presentationDelta);
     this.progression.update(delta, this.player, this.combat);
     if (this.progression.consumeSaveRequest()) this.saveNow(true);
-    this.player.getCameraTarget(this.cameraTarget);
-    this.player.copyVelocity(this.playerVelocity);
-    this.player.getWorldPosition(this.playerPosition);
     this.world.applyPlayerInfluence(this.playerPosition, this.playerVelocity);
     const lockTarget = this.combat.getLockTargetPosition();
     this.cameraRig.addImpulse(this.combat.consumeCameraImpulse());
@@ -545,14 +658,15 @@ export class Game {
       delta,
       this.cameraTarget,
       this.playerVelocity,
+      this.playerForward,
       this.player.getSprintBlend(),
       this.input.getLookAxes(),
       lockTarget,
     );
 
-    const fps = this.frameMonitor.update(delta);
-    this.updatePerformanceGovernor(fps, delta);
-    this.hud.setFps(fps);
+    const frameStats = this.frameMonitor.update(delta);
+    this.updatePerformanceGovernor(frameStats, delta);
+    this.hud.setFps(frameStats.fps);
     this.hud.setPlayerState(this.player.getMotionState(), this.player.getSpeed(), this.player.isGrounded());
     this.hud.setVitals(this.player.getHealthRatio(), this.player.getStaminaRatio());
     this.hud.setCharge(this.player.getChargeRatio());
@@ -575,6 +689,12 @@ export class Game {
     this.updateAutosave(delta);
     this.pipeline.render(delta);
   };
+
+  private requireElement(id: string): HTMLElement {
+    const element = document.getElementById(id);
+    if (!element) throw new Error(`Required element is missing: #${id}`);
+    return element;
+  }
 
   private requireButton(id: string): HTMLButtonElement {
     const element = document.getElementById(id);

@@ -18,6 +18,8 @@ export class PlayerController {
   private readonly controller: KinematicCharacterController;
   private readonly knight = new AshenKnightVisual();
   private readonly horizontalVelocity = new THREE.Vector3();
+  private readonly targetVelocity = new THREE.Vector3();
+  private readonly velocityDelta = new THREE.Vector3();
   private readonly desiredDirection = new THREE.Vector3();
   private readonly actualVelocity = new THREE.Vector3();
   private readonly cameraForward = new THREE.Vector3();
@@ -637,14 +639,14 @@ export class PlayerController {
     const targetSpeed = hasInput
       ? (canSprint ? GAME_CONFIG.player.runSpeed : GAME_CONFIG.player.walkSpeed) * inputMagnitude
       : 0;
-    const targetVelocityX = this.desiredDirection.x * targetSpeed;
-    const targetVelocityZ = this.desiredDirection.z * targetSpeed;
+    this.targetVelocity.copy(this.desiredDirection).multiplyScalar(targetSpeed);
 
     const currentPlanarLength = this.horizontalVelocity.length();
     const currentDirection = currentPlanarLength > 0.05
       ? this.scratchDirection.copy(this.horizontalVelocity).multiplyScalar(1 / currentPlanarLength)
       : this.desiredDirection;
-    const reversal = hasInput ? currentDirection.dot(this.desiredDirection) < -0.2 : false;
+    const steeringDot = hasInput ? currentDirection.dot(this.desiredDirection) : 1;
+    const reversal = hasInput && steeringDot < -0.2;
     const acceleration = !this.grounded
       ? GAME_CONFIG.player.airAcceleration
       : reversal
@@ -653,8 +655,14 @@ export class PlayerController {
           ? canSprint ? GAME_CONFIG.player.sprintAcceleration : GAME_CONFIG.player.groundAcceleration
           : GAME_CONFIG.player.groundDeceleration;
 
-    this.horizontalVelocity.x = moveTowards(this.horizontalVelocity.x, targetVelocityX, acceleration * delta);
-    this.horizontalVelocity.z = moveTowards(this.horizontalVelocity.z, targetVelocityZ, acceleration * delta);
+    // Limit the whole planar velocity change instead of clamping X/Z independently.
+    // This keeps diagonal acceleration and sharp reversals from feeling like a digital snap.
+    this.velocityDelta.copy(this.targetVelocity).sub(this.horizontalVelocity).setY(0);
+    const maxVelocityChange = acceleration * delta;
+    if (this.velocityDelta.lengthSq() > maxVelocityChange * maxVelocityChange) {
+      this.velocityDelta.setLength(maxVelocityChange);
+    }
+    this.horizontalVelocity.add(this.velocityDelta).setY(0);
     if (lockTarget && !hasInput) this.horizontalVelocity.multiplyScalar(Math.exp(-18 * delta));
     return this.horizontalVelocity;
   }
@@ -889,11 +897,6 @@ export class PlayerController {
       this.pendingAttackPulse = null;
     }
   }
-}
-
-function moveTowards(current: number, target: number, maxDelta: number): number {
-  if (Math.abs(target - current) <= maxDelta) return target;
-  return current + Math.sign(target - current) * maxDelta;
 }
 
 function shortestAngle(angle: number): number {

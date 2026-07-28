@@ -94,6 +94,7 @@ export class RenderPipeline {
   private quality: QualityPreset = 'balanced';
   private motionScale = 1;
   private contrastBoost = 0;
+  private performanceTier: 0 | 1 | 2 = 0;
 
   constructor(
     renderer: THREE.WebGLRenderer,
@@ -124,6 +125,12 @@ export class RenderPipeline {
     this.bloomPass.threshold = preset === 'performance' ? 0.91 : preset === 'cinematic' ? 0.82 : 0.87;
   }
 
+
+  setPerformanceTier(tier: 0 | 1 | 2): void {
+    this.performanceTier = tier;
+    this.bloomPass.enabled = tier < 2;
+  }
+
   setBossState(snapshot: BossSnapshot): void {
     this.encounterTarget = snapshot.active ? 1 : 0;
     this.dangerTarget = snapshot.active && snapshot.mechanicDanger ? 1 : 0;
@@ -151,7 +158,8 @@ export class RenderPipeline {
     this.cinematicPass.uniforms['endingIntensity']!.value = this.endingIntensity;
     this.cinematicPass.uniforms['endingSever']!.value = this.endingSever;
     const qualityBloom = this.quality === 'performance' ? 0.58 : this.quality === 'cinematic' ? 1.12 : 0.86;
-    this.bloomPass.strength = (0.18 + this.encounterIntensity * 0.14 + this.dangerIntensity * 0.16 + this.endingIntensity * 0.08) * qualityBloom;
+    const performanceBloom = this.performanceTier === 2 ? 0 : this.performanceTier === 1 ? 0.68 : 1;
+    this.bloomPass.strength = (0.18 + this.encounterIntensity * 0.14 + this.dangerIntensity * 0.16 + this.endingIntensity * 0.08) * qualityBloom * performanceBloom;
     this.bloomPass.radius = (0.42 + this.dangerIntensity * 0.08) * (this.quality === 'performance' ? 0.82 : 1);
     this.composer.render(delta);
   }

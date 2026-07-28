@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import { GAME_CONFIG } from '../config/GameConfig';
 import type { LookAxes } from '../input/InputController';
 
+const COLLISION_SAMPLE_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [0, 0], [-0.24, 0], [0.24, 0], [0, 0.2], [0, -0.16],
+];
+
 export class ThirdPersonCamera {
   private readonly raycaster = new THREE.Raycaster();
   private readonly smoothedTarget = new THREE.Vector3();
@@ -13,7 +17,10 @@ export class ThirdPersonCamera {
   private readonly toLock = new THREE.Vector3();
   private readonly weightedLockTarget = new THREE.Vector3();
   private readonly castOrigin = new THREE.Vector3();
+  private readonly sampleOrigin = new THREE.Vector3();
   private readonly collisionVector = new THREE.Vector3();
+  private readonly collisionRight = new THREE.Vector3();
+  private readonly collisionUp = new THREE.Vector3(0, 1, 0);
   private readonly planarForward = new THREE.Vector3(0, 0, -1);
   private readonly planarRight = new THREE.Vector3(1, 0, 0);
   private pointerLocked = false;
@@ -27,13 +34,16 @@ export class ThirdPersonCamera {
   private pitch: number = GAME_CONFIG.camera.pitch;
   private distance: number = GAME_CONFIG.camera.distance;
   private collisionDistance: number = GAME_CONFIG.camera.distance;
+  private currentShoulderOffset = GAME_CONFIG.camera.shoulderOffset;
   private initialized = false;
-  private lockBlend: number = 0;
-  private cameraImpulse: number = 0;
-  private shakeTime: number = 0;
+  private lockBlend = 0;
+  private cameraImpulse = 0;
+  private shakeTime = 0;
   private enabled = false;
   private sensitivityScale = 1;
   private shakeScale = 1;
+  private secondsSinceLook = 10;
+  private collisionRatio = 1;
 
   constructor(
     private readonly camera: THREE.PerspectiveCamera,
@@ -47,19 +57,29 @@ export class ThirdPersonCamera {
     delta: number,
     target: THREE.Vector3,
     velocity: THREE.Vector3,
+    playerForward: THREE.Vector3,
     sprintBlend: number,
     gamepadLook: LookAxes,
     lockTarget: THREE.Vector3 | null,
   ): void {
-    this.consumeLook(delta, gamepadLook);
+    const lookActivity = this.consumeLook(delta, gamepadLook);
+    this.secondsSinceLook = lookActivity ? 0 : this.secondsSinceLook + delta;
     this.lockBlend += ((lockTarget ? 1 : 0) - this.lockBlend) * (1 - Math.exp(-10 * delta));
+
     if (lockTarget) {
       this.toLock.copy(lockTarget).sub(target).setY(0);
       if (this.toLock.lengthSq() > 0.001) {
         const lockYaw = Math.atan2(-this.toLock.x, -this.toLock.z);
         this.yaw = moveAngleTowards(this.yaw, lockYaw, GAME_CONFIG.camera.lockYawSharpness * delta);
       }
+    } else if (this.secondsSinceLook > 1.15 && sprintBlend > 0.22 && playerForward.lengthSq() > 0.25) {
+      const travelYaw = Math.atan2(-playerForward.x, -playerForward.z);
+      const recenterStrength = THREE.MathUtils.smoothstep(sprintBlend, 0.22, 0.92);
+      this.yaw = moveAngleTowards(this.yaw, travelYaw, (0.34 + recenterStrength * 0.58) * delta);
+      const travelPitch = GAME_CONFIG.camera.pitch + sprintBlend * 0.025;
+      this.pitch += (travelPitch - this.pitch) * (1 - Math.exp(-0.9 * recenterStrength * delta));
     }
+
     this.planarForward.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).normalize();
     this.planarRight.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).normalize();
 
@@ -92,23 +112,32 @@ export class ThirdPersonCamera {
       Math.sin(this.pitch) * framedDistance,
       Math.cos(this.yaw) * horizontal,
     );
-    this.shoulder.copy(this.planarRight).multiplyScalar(GAME_CONFIG.camera.shoulderOffset);
+
+    const lockShoulderScale = THREE.MathUtils.lerp(1, 0.46, this.lockBlend);
+    const desiredShoulder = GAME_CONFIG.camera.shoulderOffset * lockShoulderScale * THREE.MathUtils.lerp(0.3, 1, this.collisionRatio);
+    this.currentShoulderOffset += (desiredShoulder - this.currentShoulderOffset) * (1 - Math.exp(-12 * delta));
+    this.shoulder.copy(this.planarRight).multiplyScalar(this.currentShoulderOffset);
     this.desiredPosition.copy(this.smoothedTarget).add(this.shoulder).add(this.cameraVector);
 
-    this.castOrigin.copy(this.smoothedTarget).add(this.shoulder.multiplyScalar(0.35));
+    this.castOrigin.copy(this.smoothedTarget).addScaledVector(this.shoulder, 0.28);
     this.collisionVector.copy(this.desiredPosition).sub(this.castOrigin);
     const fullDistance = this.collisionVector.length();
     let safeDistance = fullDistance;
     if (fullDistance > 0.001) {
       this.collisionVector.normalize();
-      this.raycaster.set(this.castOrigin, this.collisionVector);
-      this.raycaster.near = 0.2;
-      this.raycaster.far = fullDistance;
-      const hit = this.raycaster.intersectObjects(this.blockers, true)[0];
-      if (hit) {
-        safeDistance = Math.max(
-          GAME_CONFIG.camera.collisionMinDistance,
-          hit.distance - GAME_CONFIG.camera.collisionPadding,
+      this.collisionRight.crossVectors(this.collisionVector, this.collisionUp).normalize();
+      for (const [sideOffset, heightOffset] of COLLISION_SAMPLE_OFFSETS) {
+        this.sampleOrigin.copy(this.castOrigin)
+          .addScaledVector(this.collisionRight, sideOffset)
+          .addScaledVector(this.collisionUp, heightOffset);
+        this.raycaster.set(this.sampleOrigin, this.collisionVector);
+        this.raycaster.near = 0.12;
+        this.raycaster.far = fullDistance;
+        const hit = this.raycaster.intersectObjects(this.blockers, true)[0];
+        if (!hit) continue;
+        safeDistance = Math.min(
+          safeDistance,
+          Math.max(GAME_CONFIG.camera.collisionMinDistance, hit.distance - GAME_CONFIG.camera.collisionPadding),
         );
       }
     }
@@ -117,6 +146,9 @@ export class ThirdPersonCamera {
       ? GAME_CONFIG.camera.collisionInSharpness
       : GAME_CONFIG.camera.collisionOutSharpness;
     this.collisionDistance += (safeDistance - this.collisionDistance) * (1 - Math.exp(-collisionSharpness * delta));
+    this.collisionRatio = fullDistance > 0.001
+      ? THREE.MathUtils.clamp(this.collisionDistance / fullDistance, 0, 1)
+      : 1;
     if (fullDistance > 0.001) {
       this.desiredPosition.copy(this.castOrigin).addScaledVector(this.collisionVector, this.collisionDistance);
     } else {
@@ -166,6 +198,21 @@ export class ThirdPersonCamera {
     this.shakeScale = THREE.MathUtils.clamp(shakeScale, 0, 1);
   }
 
+  snapBehind(playerForward: THREE.Vector3, target: THREE.Vector3): void {
+    if (playerForward.lengthSq() > 0.001) this.yaw = Math.atan2(-playerForward.x, -playerForward.z);
+    this.pitch = GAME_CONFIG.camera.pitch;
+    this.smoothedTarget.copy(target);
+    this.desiredTarget.copy(target);
+    this.collisionDistance = this.distance;
+    this.collisionRatio = 1;
+    this.currentShoulderOffset = GAME_CONFIG.camera.shoulderOffset;
+    this.initialized = true;
+  }
+
+  getCollisionRatio(): number {
+    return this.collisionRatio;
+  }
+
   isLocked(): boolean {
     return this.pointerLocked;
   }
@@ -192,12 +239,14 @@ export class ThirdPersonCamera {
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
   }
 
-  private consumeLook(delta: number, gamepadLook: LookAxes): void {
+  private consumeLook(delta: number, gamepadLook: LookAxes): boolean {
     if (!this.enabled) {
       this.mouseDeltaX = 0;
       this.mouseDeltaY = 0;
-      return;
+      return false;
     }
+    const mouseMagnitude = Math.abs(this.mouseDeltaX) + Math.abs(this.mouseDeltaY);
+    const gamepadMagnitude = Math.abs(gamepadLook.horizontal) + Math.abs(gamepadLook.vertical);
     this.yaw -= this.mouseDeltaX * GAME_CONFIG.camera.mouseSensitivity * this.sensitivityScale;
     this.pitch += this.mouseDeltaY * GAME_CONFIG.camera.mouseSensitivity * this.sensitivityScale;
     this.mouseDeltaX = 0;
@@ -205,6 +254,7 @@ export class ThirdPersonCamera {
     this.yaw -= gamepadLook.horizontal * GAME_CONFIG.camera.gamepadLookSpeed * delta * this.sensitivityScale;
     this.pitch += gamepadLook.vertical * GAME_CONFIG.camera.gamepadLookSpeed * delta * this.sensitivityScale;
     this.pitch = THREE.MathUtils.clamp(this.pitch, 0.08, 0.9);
+    return mouseMagnitude > 0.1 || gamepadMagnitude > 0.05;
   }
 
   private readonly onClick = (): void => {

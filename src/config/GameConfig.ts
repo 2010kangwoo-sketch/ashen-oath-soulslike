@@ -1,6 +1,6 @@
 export const GAME_CONFIG = {
   title: 'Ashen Oath',
-  pass: 10,
+  pass: 11,
   renderer: {
     maxPixelRatio: 1.65,
     shadowMapSize: 2048,
@@ -49,7 +49,7 @@ export const GAME_CONFIG = {
     runSpeed: 6.65,
     groundAcceleration: 23,
     sprintAcceleration: 17,
-    reversalAcceleration: 29,
+    reversalAcceleration: 24,
     groundDeceleration: 31,
     airAcceleration: 5.5,
     turnSpeedWalk: 9.5,
