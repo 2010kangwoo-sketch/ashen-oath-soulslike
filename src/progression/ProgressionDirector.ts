@@ -5,6 +5,7 @@ import type { CombatDirector } from '../combat/CombatDirector';
 import { GAME_CONFIG } from '../config/GameConfig';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import type { PlayerController } from '../player/PlayerController';
+import type { TraversalFailureReason } from '../core/TraversalSafety';
 
 export type EndingChoice = 'inherit' | 'sever';
 
@@ -242,6 +243,39 @@ export class ProgressionDirector {
       return true;
     }
     return false;
+  }
+
+
+  getActiveRespawn(target: THREE.Vector3): THREE.Vector3 {
+    return target.copy(this.activeShrine.respawn);
+  }
+
+  recoverTraversalFailure(
+    player: PlayerController,
+    combat: CombatDirector,
+    recoveryPosition: THREE.Vector3 | null,
+    reason: TraversalFailureReason | 'manual-recovery',
+  ): THREE.Vector3 {
+    const destination = recoveryPosition?.clone() ?? this.activeShrine.respawn.clone();
+    if (recoveryPosition) {
+      player.recoverTraversalAt(destination);
+      combat.clearTransientCombat();
+    } else {
+      player.respawnAt(destination);
+      combat.resetAtRest();
+    }
+    this.deathHandled = false;
+    this.respawnTimer = 0;
+    this.interaction = null;
+    const labels: Record<TraversalFailureReason | 'manual-recovery', string> = {
+      'non-finite-position': '손상된 위치를 감지해 최근 안전 지점으로 복구했습니다',
+      'outside-playable-envelope': '이동 가능 구역을 벗어나 최근 안전 지점으로 복구했습니다',
+      'impossible-displacement': '비정상적인 위치 변화를 감지해 안전하게 복구했습니다',
+      'manual-recovery': '끼임 가능성을 피해 최근 안전 지점으로 복구했습니다',
+    };
+    this.showNotice(labels[reason], 2.7);
+    this.saveRequested = true;
+    return destination;
   }
 
 

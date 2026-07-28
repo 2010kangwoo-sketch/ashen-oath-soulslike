@@ -77,6 +77,7 @@ export class PlayerController {
   };
   private skillPulseIndex = 0;
   private invulnerable = false;
+  private safetyGraceRemaining = 0;
   private flaskCharges: number = GAME_CONFIG.player.flaskCapacity;
   private healApplied = false;
 
@@ -232,6 +233,7 @@ export class PlayerController {
     this.state = 'airborne';
     this.sprintBlend = 0;
     this.invulnerable = false;
+    this.safetyGraceRemaining = 0;
     this.pendingAttackPulses.length = 0;
     this.pendingSkillEvents.length = 0;
     this.resetSkillCooldowns();
@@ -267,6 +269,7 @@ export class PlayerController {
     this.state = 'airborne';
     this.sprintBlend = 0;
     this.invulnerable = false;
+    this.safetyGraceRemaining = 0;
     this.pendingAttackPulses.length = 0;
     this.pendingSkillEvents.length = 0;
     this.resetSkillCooldowns();
@@ -281,6 +284,39 @@ export class PlayerController {
     this.healApplied = false;
     this.footstepDistance = 0;
     this.pendingFootsteps = 0;
+    this.syncVisual();
+  }
+
+  recoverTraversalAt(position: THREE.Vector3): void {
+    this.body.setTranslation({ x: position.x, y: position.y, z: position.z }, true);
+    this.body.setNextKinematicTranslation({ x: position.x, y: position.y, z: position.z });
+    this.horizontalVelocity.set(0, 0, 0);
+    this.actualVelocity.set(0, 0, 0);
+    this.knockbackVelocity.set(0, 0, 0);
+    this.verticalVelocity = 0;
+    this.actualSpeed = 0;
+    this.grounded = false;
+    this.action = 'none';
+    this.actionTimer = 0;
+    this.actionProgress = 0;
+    this.state = 'airborne';
+    this.sprintBlend = 0;
+    this.pendingAttackPulses.length = 0;
+    this.pendingSkillEvents.length = 0;
+    this.queuedLightAttack = false;
+    this.chargeRatio = 0;
+    this.attackDamageScale = 1;
+    this.attackPoiseScale = 1;
+    this.executionTarget = null;
+    this.executionImpactPending = false;
+    this.executionImpactEmitted = false;
+    this.attackPulseEmitted = false;
+    this.skillPulseIndex = 0;
+    this.healApplied = false;
+    this.footstepDistance = 0;
+    this.pendingFootsteps = 0;
+    this.safetyGraceRemaining = 1.15;
+    this.invulnerable = true;
     this.syncVisual();
   }
 
@@ -1038,7 +1074,8 @@ export class PlayerController {
   }
 
   private updateInvulnerability(): void {
-    this.invulnerable = this.action === 'execute'
+    this.invulnerable = this.safetyGraceRemaining > 0
+      || this.action === 'execute'
       || (this.action === 'dodge'
         && this.actionTimer >= GAME_CONFIG.player.dodgeInvulnerableStart
         && this.actionTimer <= GAME_CONFIG.player.dodgeInvulnerableEnd)
@@ -1052,7 +1089,7 @@ export class PlayerController {
     this.actionTimer = 0;
     this.actionProgress = 0;
     this.attackPulseEmitted = false;
-    this.invulnerable = false;
+    this.invulnerable = this.safetyGraceRemaining > 0;
     this.chargeRatio = 0;
     this.attackDamageScale = 1;
     this.attackPoiseScale = 1;
@@ -1078,6 +1115,7 @@ export class PlayerController {
   }
 
   private updateResourceTimers(delta: number): void {
+    this.safetyGraceRemaining = Math.max(0, this.safetyGraceRemaining - delta);
     for (const skill of ['ashStep', 'oathCounter', 'cinderArc'] as const) {
       this.skillCooldowns[skill] = Math.max(0, this.skillCooldowns[skill] - delta);
     }

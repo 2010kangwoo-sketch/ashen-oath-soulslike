@@ -965,6 +965,10 @@ export class AshenOathkeeper implements BossEnemy {
     });
     const movement = this.controller.computedMovement();
     const current = this.body.translation();
+    if (!isFinitePosition(current) || current.y < -4 || current.y > 14) {
+      this.recoverArenaPosition();
+      return;
+    }
     const next = {
       x: THREE.MathUtils.clamp(current.x + movement.x, ARENA_MIN_X, ARENA_MAX_X),
       y: current.y + movement.y,
@@ -973,6 +977,26 @@ export class AshenOathkeeper implements BossEnemy {
     this.body.setNextKinematicTranslation(next);
     this.grounded = this.controller.computedGrounded();
     if (this.grounded && this.verticalVelocity < 0) this.verticalVelocity = -2.8;
+  }
+
+  private recoverArenaPosition(): void {
+    const destination = { x: ARENA_CENTER.x, y: this.spawn.y, z: ARENA_CENTER.z };
+    this.body.setTranslation(destination, true);
+    this.body.setNextKinematicTranslation(destination);
+    this.root.position.set(destination.x, destination.y, destination.z);
+    this.horizontalStep.set(0, 0, 0);
+    this.impactVelocity.set(0, 0, 0);
+    this.verticalVelocity = 0;
+    this.grounded = false;
+    this.attackQueue.length = 0;
+    this.nextAttackEvent = 0;
+    this.counterDowned = false;
+    if (this.state !== 'dead') {
+      this.state = 'duel';
+      this.stateTimer = -0.55;
+      this.clearMechanic();
+      this.hideTelegraphs();
+    }
   }
 
   private emitCone(
@@ -1546,6 +1570,11 @@ export class AshenOathkeeper implements BossEnemy {
     mesh.receiveShadow = true;
     return mesh;
   }
+}
+
+
+function isFinitePosition(position: { readonly x: number; readonly y: number; readonly z: number }): boolean {
+  return Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z);
 }
 
 function moveAngleTowards(current: number, target: number, maxDelta: number): number {

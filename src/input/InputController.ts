@@ -30,6 +30,9 @@ export class InputController {
   private mouseHeavyHeld = false;
   private gamepadHeavyHeld = false;
   private enabled = false;
+  private preferredGamepadIndex: number | null = null;
+  private activeGamepadName = '';
+  private lastInputDevice: 'keyboard/mouse' | 'gamepad' = 'keyboard/mouse';
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener('keydown', this.onKeyDown);
@@ -37,6 +40,8 @@ export class InputController {
     window.addEventListener('blur', this.onBlur);
     window.addEventListener('mousedown', this.onMouseDown);
     window.addEventListener('mouseup', this.onMouseUp);
+    window.addEventListener('gamepadconnected', this.onGamepadConnected);
+    window.addEventListener('gamepaddisconnected', this.onGamepadDisconnected);
   }
 
   update(): void {
@@ -58,7 +63,7 @@ export class InputController {
     let lookY = 0;
     let gamepadRun = false;
     let gamepadGuard = false;
-    const gamepad = navigator.getGamepads?.()[0];
+    const gamepad = this.getConnectedGamepad();
     if (gamepad) {
       gamepadX = applyDeadzone(gamepad.axes[0] ?? 0, 0.16);
       gamepadY = -applyDeadzone(gamepad.axes[1] ?? 0, 0.16);
@@ -77,6 +82,9 @@ export class InputController {
       this.captureGamepadPress(gamepad, 15, 'skillR');
       this.gamepadHeavyHeld = Boolean(gamepad.buttons[3]?.pressed);
       gamepadGuard = Boolean(gamepad.buttons[4]?.pressed);
+      const gamepadActive = Math.abs(gamepadX) + Math.abs(gamepadY) + Math.abs(lookX) + Math.abs(lookY) > 0.08
+        || gamepad.buttons.some((button) => button.pressed);
+      if (gamepadActive) this.lastInputDevice = 'gamepad';
     } else {
       this.previousGamepadButtons.clear();
       this.gamepadHeavyHeld = false;
@@ -104,6 +112,11 @@ export class InputController {
   isGuarding(): boolean { return this.guarding; }
   isHeavyHeld(): boolean { return this.mouseHeavyHeld || this.gamepadHeavyHeld; }
 
+  getDeviceLabel(): string {
+    if (this.lastInputDevice === 'gamepad' && this.activeGamepadName) return `게임패드 · ${shortGamepadName(this.activeGamepadName)}`;
+    return '키보드·마우스';
+  }
+
   consumeAction(action: CombatAction): boolean {
     if (!this.pressedActions.has(action)) return false;
     this.pressedActions.delete(action);
@@ -116,6 +129,8 @@ export class InputController {
     window.removeEventListener('blur', this.onBlur);
     window.removeEventListener('mousedown', this.onMouseDown);
     window.removeEventListener('mouseup', this.onMouseUp);
+    window.removeEventListener('gamepadconnected', this.onGamepadConnected);
+    window.removeEventListener('gamepaddisconnected', this.onGamepadDisconnected);
     this.held.clear();
     this.pressedActions.clear();
     this.previousGamepadButtons.clear();
@@ -128,9 +143,49 @@ export class InputController {
     this.previousGamepadButtons.set(buttonIndex, pressed);
   }
 
+  private getConnectedGamepad(): Gamepad | null {
+    const gamepads = navigator.getGamepads?.() ?? [];
+    if (this.preferredGamepadIndex !== null) {
+      const preferred = gamepads[this.preferredGamepadIndex];
+      if (preferred?.connected) {
+        this.activeGamepadName = preferred.id;
+        return preferred;
+      }
+    }
+    const fallback = Array.from(gamepads).find((gamepad): gamepad is Gamepad => Boolean(gamepad?.connected));
+    if (!fallback) {
+      this.preferredGamepadIndex = null;
+      this.activeGamepadName = '';
+      return null;
+    }
+    if (this.preferredGamepadIndex !== fallback.index) this.previousGamepadButtons.clear();
+    this.preferredGamepadIndex = fallback.index;
+    this.activeGamepadName = fallback.id;
+    return fallback;
+  }
+
+  private readonly onGamepadConnected = (event: GamepadEvent): void => {
+    if (this.preferredGamepadIndex === null) {
+      this.preferredGamepadIndex = event.gamepad.index;
+      this.activeGamepadName = event.gamepad.id;
+      this.previousGamepadButtons.clear();
+    } else if (this.preferredGamepadIndex === event.gamepad.index) {
+      this.activeGamepadName = event.gamepad.id;
+    }
+  };
+
+  private readonly onGamepadDisconnected = (event: GamepadEvent): void => {
+    if (this.preferredGamepadIndex !== event.gamepad.index) return;
+    this.preferredGamepadIndex = null;
+    this.activeGamepadName = '';
+    this.previousGamepadButtons.clear();
+    this.gamepadHeavyHeld = false;
+  };
+
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (!this.enabled) return;
     if (BLOCKED_KEYS.has(event.code)) event.preventDefault();
+    this.lastInputDevice = 'keyboard/mouse';
     const firstPress = !this.held.has(event.code);
     this.held.add(event.code);
     if (!firstPress) return;
@@ -152,6 +207,7 @@ export class InputController {
   private readonly onMouseDown = (event: MouseEvent): void => {
     if (!this.enabled) return;
     if (document.pointerLockElement !== this.canvas) return;
+    this.lastInputDevice = 'keyboard/mouse';
     if (event.button === 0) {
       const heavyModifier = this.held.has('ShiftLeft') || this.held.has('ShiftRight');
       if (heavyModifier) this.mouseHeavyHeld = true;
@@ -189,4 +245,8 @@ function applyDeadzone(value: number, deadzone: number): number {
   const magnitude = Math.abs(value);
   if (magnitude <= deadzone) return 0;
   return Math.sign(value) * ((magnitude - deadzone) / (1 - deadzone));
+}
+function shortGamepadName(name: string): string {
+  const normalized = name.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  return normalized.length > 28 ? `${normalized.slice(0, 25)}…` : normalized;
 }

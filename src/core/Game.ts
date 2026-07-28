@@ -21,6 +21,7 @@ import { FrameMonitor } from './FrameMonitor';
 import { PerformanceGovernor, type FrameStats } from './PerformanceGovernor';
 import { ScreenTransition } from './ScreenTransition';
 import { LoadingReporter } from './LoadingReporter';
+import { TraversalSafety, type TraversalFailureReason } from './TraversalSafety';
 
 export class Game {
   private readonly reporter = new LoadingReporter();
@@ -41,6 +42,8 @@ export class Game {
   private readonly hemisphereGroundTarget = new THREE.Color();
   private readonly planarForward = new THREE.Vector3();
   private readonly planarRight = new THREE.Vector3();
+  private readonly traversalSafety = new TraversalSafety();
+  private readonly recoveryFallback = new THREE.Vector3();
   private renderer!: THREE.WebGLRenderer;
   private pipeline!: RenderPipeline;
   private camera!: THREE.PerspectiveCamera;
@@ -73,6 +76,7 @@ export class Game {
   private performanceTier: 0 | 1 | 2 = 0;
   private shadowFrame = 0;
   private contextLost = false;
+  private playerWasDead = false;
   private readonly debugEnabled = new URLSearchParams(window.location.search).has('debug');
 
   constructor(private readonly canvas: HTMLCanvasElement) {}
@@ -102,6 +106,7 @@ export class Game {
       onContinue: () => this.continueGame(),
       onResume: () => this.resumeGame(),
       onRestartCheckpoint: () => this.restartCheckpoint(),
+      onRecoverTraversal: () => this.recoverTraversal('manual-recovery'),
       onReturnToTitle: () => this.returnToTitle(),
       onSettingsChanged: (settings) => this.applySettings(settings),
     });
@@ -118,6 +123,7 @@ export class Game {
     this.player.getCameraTarget(this.cameraTarget);
     this.player.copyVelocity(this.playerVelocity);
     this.player.copyForward(this.playerForward);
+    this.traversalSafety.reset(this.player.getWorldPosition(new THREE.Vector3()));
     this.cameraRig.update(
       1,
       this.cameraTarget,
@@ -354,6 +360,7 @@ export class Game {
     this.contextLost = true;
     this.saveNow(false, true);
     this.paused = true;
+    this.physics?.resetAccumulator();
     this.input?.setEnabled(false);
     this.cameraRig?.setEnabled(false);
     this.audio.setDucked(true);
@@ -415,6 +422,9 @@ export class Game {
     this.paused = true;
     this.endingPresented = false;
     this.autosaveAccumulator = 0;
+    this.playerWasDead = this.player.isDead();
+    this.physics.resetAccumulator();
+    this.traversalSafety.reset(this.player.getWorldPosition(this.playerPosition));
     this.pipeline.setEndingState(false, null);
     this.menu.hideAll();
     this.hud.setMenuSuppressed(false);
@@ -433,12 +443,14 @@ export class Game {
     this.input.setEnabled(true);
     this.cameraRig.setEnabled(true);
     this.audio.setDucked(false);
+    this.physics.resetAccumulator();
     this.clock.getDelta();
   }
 
   private pauseGame(): void {
     if (!this.gameActive || this.paused || this.screenTransition.isActive()) return;
     this.paused = true;
+    this.physics.resetAccumulator();
     this.input.setEnabled(false);
     this.cameraRig.setEnabled(false);
     this.audio.setDucked(true);
@@ -455,6 +467,7 @@ export class Game {
     this.input.setEnabled(true);
     this.cameraRig.setEnabled(true);
     this.audio.setDucked(false);
+    this.physics.resetAccumulator();
     this.clock.getDelta();
   }
 
@@ -470,6 +483,32 @@ export class Game {
       () => this.finishGameplayTransition(),
     );
   }
+
+  private recoverTraversal(reason: TraversalFailureReason | 'manual-recovery'): void {
+    if (!this.gameActive || this.screenTransition.isActive() || this.progression.isEndingLocked()) return;
+    this.runScreenTransition(
+      () => {
+        this.progression.getActiveRespawn(this.recoveryFallback);
+        const hasSample = this.traversalSafety.hasRecoverySample();
+        const recoveryPosition = hasSample
+          ? this.traversalSafety.getRecoveryPosition(this.recoveryFallback)
+          : null;
+        const destination = this.progression.recoverTraversalFailure(
+          this.player,
+          this.combat,
+          recoveryPosition,
+          reason,
+        );
+        this.hitStopRemaining = 0;
+        this.physics.resetAccumulator();
+        this.traversalSafety.recordRecovery(destination, reason === 'manual-recovery' ? null : reason);
+        this.prepareGameplay();
+        this.saveNow(true);
+      },
+      () => this.finishGameplayTransition(),
+    );
+  }
+
 
   private returnToTitle(): void {
     this.saveNow(false, true);
@@ -488,6 +527,7 @@ export class Game {
   private runScreenTransition(action: () => void, complete?: () => void): void {
     if (this.screenTransition.isActive()) return;
     this.paused = true;
+    this.physics.resetAccumulator();
     this.input.setEnabled(false);
     this.cameraRig.setEnabled(false);
     this.audio.setDucked(true);
@@ -546,6 +586,11 @@ export class Game {
       this.cameraRig.getCollisionRatio(),
       this.renderer.info.render.calls,
       this.renderer.info.render.triangles,
+    );
+    this.hud.setRuntimeDiagnostics(
+      this.physics.getStepStats(),
+      this.traversalSafety.getSnapshot(),
+      this.input.getDeviceLabel(),
     );
   }
 
@@ -645,11 +690,25 @@ export class Game {
     this.player.copyVelocity(this.playerVelocity);
     this.player.copyForward(this.playerForward);
     this.player.getWorldPosition(this.playerPosition);
+    const traversalFailure = this.traversalSafety.update(delta, this.player);
+    if (traversalFailure) {
+      this.recoverTraversal(traversalFailure);
+      this.pipeline.render(delta);
+      return;
+    }
     this.world.update(delta, this.playerPosition);
     this.updateLighting(delta);
     this.player.updateVisual(presentationDelta);
     this.combat.updateVisual(presentationDelta);
     this.progression.update(delta, this.player, this.combat);
+    const playerDeadAfterProgression = this.player.isDead();
+    if (this.playerWasDead && !playerDeadAfterProgression) {
+      this.player.getWorldPosition(this.playerPosition);
+      this.traversalSafety.reset(this.playerPosition);
+      this.physics.resetAccumulator();
+      this.snapCameraToPlayer();
+    }
+    this.playerWasDead = playerDeadAfterProgression;
     if (this.progression.consumeSaveRequest()) this.saveNow(true);
     this.world.applyPlayerInfluence(this.playerPosition, this.playerVelocity);
     const lockTarget = this.combat.getLockTargetPosition();

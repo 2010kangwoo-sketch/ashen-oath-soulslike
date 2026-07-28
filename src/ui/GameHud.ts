@@ -3,6 +3,8 @@ import type { BossPresentationEvent, BossSnapshot, LockTargetSnapshot, SkillCool
 import type { PlayerMotionState } from '../player/PlayerController';
 import type { EndingSnapshot, ProgressionSnapshot } from '../progression/ProgressionDirector';
 import type { FrameStats } from '../core/PerformanceGovernor';
+import type { TraversalSafetySnapshot } from '../core/TraversalSafety';
+import type { PhysicsStepStats } from '../physics/PhysicsWorld';
 
 export class GameHud {
   private readonly root: HTMLElement;
@@ -18,6 +20,9 @@ export class GameHud {
   private readonly cameraSpaceStatus: HTMLElement;
   private readonly drawCallStatus: HTMLElement;
   private readonly triangleStatus: HTMLElement;
+  private readonly physicsStepStatus: HTMLElement;
+  private readonly traversalSafetyStatus: HTMLElement;
+  private readonly inputDeviceStatus: HTMLElement;
   private readonly pointerHint: HTMLElement;
   private readonly healthFill: HTMLElement;
   private readonly staminaFill: HTMLElement;
@@ -90,6 +95,9 @@ export class GameHud {
     this.cameraSpaceStatus = this.requireElement('camera-space-status');
     this.drawCallStatus = this.requireElement('draw-call-status');
     this.triangleStatus = this.requireElement('triangle-status');
+    this.physicsStepStatus = this.requireElement('physics-step-status');
+    this.traversalSafetyStatus = this.requireElement('traversal-safety-status');
+    this.inputDeviceStatus = this.requireElement('input-device-status');
     this.pointerHint = this.requireElement('pointer-hint');
     this.healthFill = this.requireElement('health-fill');
     this.staminaFill = this.requireElement('stamina-fill');
@@ -197,6 +205,23 @@ export class GameHud {
     this.drawCallStatus.textContent = drawCalls.toLocaleString('ko-KR');
     this.triangleStatus.textContent = triangles.toLocaleString('ko-KR');
   }
+
+  setRuntimeDiagnostics(
+    physics: PhysicsStepStats,
+    safety: TraversalSafetySnapshot,
+    inputDevice: string,
+  ): void {
+    this.physicsStepStatus.textContent = `${physics.lastStepCount} step · 포화 ${physics.saturatedFrameCount}`;
+    const reasonLabels = {
+      'non-finite-position': '좌표 손상',
+      'outside-playable-envelope': '구역 이탈',
+      'impossible-displacement': '비정상 이동',
+    } as const;
+    const reason = safety.lastReason ? reasonLabels[safety.lastReason] : '정상';
+    this.traversalSafetyStatus.textContent = `${reason} · 복구 ${safety.recoveryCount} · 표본 ${safety.safeSampleCount}`;
+    this.inputDeviceStatus.textContent = inputDevice;
+  }
+
 
   setPlayerState(state: PlayerMotionState, speed: number, grounded: boolean): void {
     const labels: Record<PlayerMotionState, string> = {

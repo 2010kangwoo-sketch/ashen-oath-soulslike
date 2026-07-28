@@ -133,6 +133,13 @@ const ATTACKS: Record<BossAttackId, BossAttackProfile> = {
   },
 };
 
+const ARENA_MIN_X = -14.7;
+const ARENA_MAX_X = 14.7;
+const ARENA_MIN_Z = -118.0;
+const ARENA_MAX_Z = -87.0;
+const ARENA_MIN_Y = -4.0;
+const ARENA_MAX_Y = 14.0;
+
 export class GatewardenVarkan implements BossEnemy {
   readonly id = 'gatewarden-varkan';
   readonly displayName = '문지기 바르칸';
@@ -837,6 +844,11 @@ export class GatewardenVarkan implements BossEnemy {
 
   private applyPhysicsMovement(delta: number): void {
     if (this.state === 'sealed') return;
+    const position = this.body.translation();
+    if (!isFinitePosition(position) || position.y < ARENA_MIN_Y || position.y > ARENA_MAX_Y) {
+      this.recoverArenaPosition();
+      return;
+    }
     if (this.grounded && this.verticalVelocity <= 0) this.verticalVelocity = -3.2;
     else this.verticalVelocity = Math.max(-28, this.verticalVelocity - 26 * delta);
     this.controller.computeColliderMovement(this.collider, {
@@ -845,13 +857,34 @@ export class GatewardenVarkan implements BossEnemy {
       z: this.horizontalStep.z,
     });
     const corrected = this.controller.computedMovement();
-    const position = this.body.translation();
-    this.body.setNextKinematicTranslation({
-      x: position.x + corrected.x,
+    const next = {
+      x: THREE.MathUtils.clamp(position.x + corrected.x, ARENA_MIN_X, ARENA_MAX_X),
       y: position.y + corrected.y,
-      z: position.z + corrected.z,
-    });
+      z: THREE.MathUtils.clamp(position.z + corrected.z, ARENA_MIN_Z, ARENA_MAX_Z),
+    };
+    if (!isFinitePosition(next) || next.y < ARENA_MIN_Y || next.y > ARENA_MAX_Y) {
+      this.recoverArenaPosition();
+      return;
+    }
+    this.body.setNextKinematicTranslation(next);
     this.grounded = this.controller.computedGrounded();
+  }
+
+  private recoverArenaPosition(): void {
+    this.body.setTranslation({ x: this.spawn.x, y: this.spawn.y, z: this.spawn.z }, true);
+    this.body.setNextKinematicTranslation({ x: this.spawn.x, y: this.spawn.y, z: this.spawn.z });
+    this.root.position.copy(this.spawn);
+    this.horizontalStep.set(0, 0, 0);
+    this.impactVelocity.set(0, 0, 0);
+    this.verticalVelocity = 0;
+    this.grounded = false;
+    this.attackQueue.length = 0;
+    this.nextAttackEvent = 0;
+    this.counterDowned = false;
+    if (this.state !== 'dead') {
+      this.state = 'approach';
+      this.stateTimer = -0.55;
+    }
   }
 
   private syncRootFromBody(): void {
@@ -1094,6 +1127,11 @@ export class GatewardenVarkan implements BossEnemy {
 
 function shortestAngle(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
+
+function isFinitePosition(position: { readonly x: number; readonly y: number; readonly z: number }): boolean {
+  return Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z);
 }
 
 function moveAngleTowards(current: number, target: number, maxDelta: number): number {

@@ -6,6 +6,7 @@ export interface GameMenuHandlers {
   readonly onContinue: () => void;
   readonly onResume: () => void;
   readonly onRestartCheckpoint: () => void;
+  readonly onRecoverTraversal: () => void;
   readonly onReturnToTitle: () => void;
   readonly onSettingsChanged: (settings: GameSettings) => void;
 }
@@ -63,7 +64,7 @@ export class GameMenu {
       this.resetGamepadNavigation();
       return;
     }
-    const gamepad = navigator.getGamepads?.()[0];
+    const gamepad = Array.from(navigator.getGamepads?.() ?? []).find((candidate): candidate is Gamepad => Boolean(candidate?.connected));
     if (!gamepad) {
       this.menuAxisY = 0;
       this.menuAxisX = 0;
@@ -175,6 +176,7 @@ export class GameMenu {
     this.requireButton('title-settings-button').addEventListener('click', () => this.openSettings('title'));
     this.requireButton('resume-button').addEventListener('click', this.handlers.onResume);
     this.requireButton('restart-button').addEventListener('click', this.handlers.onRestartCheckpoint);
+    this.requireButton('recover-traversal-button').addEventListener('click', this.handlers.onRecoverTraversal);
     this.requireButton('pause-settings-button').addEventListener('click', () => this.openSettings('pause'));
     this.requireButton('return-title-button').addEventListener('click', this.handlers.onReturnToTitle);
     this.requireButton('settings-back-button').addEventListener('click', () => this.closeSettings());

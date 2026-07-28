@@ -206,6 +206,19 @@ export class CombatDirector {
     }
   }
 
+
+  clearTransientCombat(): void {
+    this.lockedEnemy = null;
+    this.executingEnemy = null;
+    this.cameraImpulse = 0;
+    this.hitStop = 0;
+    for (const enemy of this.enemies) {
+      while (enemy.consumeAttackPulse()) {
+        // Traversal recovery must not preserve an attack queued at the invalid position.
+      }
+    }
+  }
+
   reset(): void {
     this.lockedEnemy = null;
     this.executingEnemy = null;

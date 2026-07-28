@@ -1182,6 +1182,10 @@ export class BellDevouringWidow implements BossEnemy {
 
   private moveCeiling(delta: number, x: number, y: number, z: number, speed: number): void {
     const current = this.body.translation();
+    if (!isFinitePosition(current) || current.y < -4 || current.y > CEILING_BODY_Y + 4) {
+      this.recoverArenaPosition();
+      return;
+    }
     this.scratch.set(x - current.x, y - current.y, z - current.z);
     const distance = this.scratch.length();
     if (distance > 0.001) this.scratch.multiplyScalar(Math.min(distance, speed * delta) / distance);
@@ -1204,6 +1208,10 @@ export class BellDevouringWidow implements BossEnemy {
     });
     const movement = this.controller.computedMovement();
     const current = this.body.translation();
+    if (!isFinitePosition(current) || current.y < -4 || current.y > CEILING_BODY_Y + 4) {
+      this.recoverArenaPosition();
+      return;
+    }
     const next = {
       x: THREE.MathUtils.clamp(current.x + movement.x, -11.5, 11.5),
       y: current.y + movement.y,
@@ -1212,6 +1220,29 @@ export class BellDevouringWidow implements BossEnemy {
     this.body.setNextKinematicTranslation(next);
     this.grounded = this.controller.computedGrounded();
     if (this.grounded && this.verticalVelocity < 0) this.verticalVelocity = -2.8;
+  }
+
+  private recoverArenaPosition(): void {
+    const destination = { x: ARENA_CENTER.x, y: GROUND_BODY_Y, z: ARENA_CENTER.z };
+    this.body.setTranslation(destination, true);
+    this.body.setNextKinematicTranslation(destination);
+    this.root.position.set(destination.x, destination.y, destination.z);
+    this.horizontalStep.set(0, 0, 0);
+    this.impactVelocity.set(0, 0, 0);
+    this.verticalVelocity = 0;
+    this.grounded = false;
+    this.onCeiling = false;
+    this.attackQueue.length = 0;
+    this.nextAttackEvent = 0;
+    this.counterDowned = false;
+    if (this.state !== 'dead') {
+      this.state = 'stalk';
+      this.stateTimer = -0.55;
+      this.mechanicName = '';
+      this.mechanicHint = '';
+      this.mechanicProgress = 0;
+      this.mechanicDanger = false;
+    }
   }
 
   private syncRootFromBody(): void {
@@ -1225,6 +1256,11 @@ export class BellDevouringWidow implements BossEnemy {
     mesh.receiveShadow = true;
     return mesh;
   }
+}
+
+
+function isFinitePosition(position: { readonly x: number; readonly y: number; readonly z: number }): boolean {
+  return Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z);
 }
 
 function moveAngleTowards(current: number, target: number, maxDelta: number): number {

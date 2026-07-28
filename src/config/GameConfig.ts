@@ -1,6 +1,6 @@
 export const GAME_CONFIG = {
   title: 'Ashen Oath',
-  pass: 12,
+  pass: 13,
   renderer: {
     maxPixelRatio: 1.65,
     shadowMapSize: 2048,
@@ -198,5 +198,15 @@ export const GAME_CONFIG = {
     bossTriggerZ: -90.2,
     widowTriggerZ: -136.0,
     oathkeeperTriggerZ: -190.0,
+    safety: {
+      minimumX: -42,
+      maximumX: 42,
+      minimumY: -10,
+      maximumY: 28,
+      minimumZ: -232,
+      maximumZ: 34,
+      minimumSafeY: -3.5,
+      maximumSampleSpeed: 13.5,
+    },
   },
 } as const;
