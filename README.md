@@ -11,8 +11,9 @@
 - Production Pass 4: 여성 서약지기 리그, 얼굴 몸짓, 9개 머리카락 묶음의 관절형 2차 움직임
 - Production Pass 5: 세 구역 연결, 서약석 3개, 지름길 3개, 사망·재화 회수·회복병, 일반 적 4종과 정예 2종
 - Production Pass 6: 첫 보스 문지기 바르칸, 전용 경기장·안개문·2페이즈·방패 파괴·보스 UI
-- 현재 플레이 가능: 대성당 진입로부터 서약의 문 앞뜰까지 탐색하고 첫 보스를 격파하는 완결된 1막
-- 다음 작업: 두 번째 보스 종을 삼킨 과부와 수직 전투 공간
+- Production Pass 7: 두 번째 보스 종을 삼킨 과부, 수직 경기장·천장 이동·파괴 가능한 종·직선 및 도넛형 레이드 기믹
+- 현재 플레이 가능: 대성당 진입로부터 공허한 종의 심장까지 탐색하고 서로 다른 규칙의 보스 2명을 격파하는 2막
+- 다음 작업: 최종 보스 재의 서약자와 결말
 
 ## 출시 목표
 
@@ -27,7 +28,7 @@
 - `docs/PRODUCTION_CHARTER.md`
 - `docs/ART_DIRECTION.md`
 - `docs/COMBAT_BOSS_BIBLE.md`
-- `docs/PRODUCTION_PASS_6.md`
+- `docs/PRODUCTION_PASS_7.md`
 - `docs/TEN_PASS_ROADMAP.md`
 
 ## 실행

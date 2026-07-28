@@ -176,6 +176,34 @@ export class AudioDirector {
     this.playOscillator(now + 0.48, 'triangle', 330, 220, 1.9, 0.026);
   }
 
+
+  widowChime(catastrophic: boolean): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const gain = catastrophic ? 0.12 : 0.075;
+    this.playOscillator(now, 'sine', catastrophic ? 92 : 126, catastrophic ? 64 : 108, catastrophic ? 2.1 : 1.35, gain);
+    this.playOscillator(now + 0.015, 'sine', catastrophic ? 184 : 252, catastrophic ? 128 : 216, catastrophic ? 1.65 : 1.0, gain * 0.48);
+    this.playOscillator(now + 0.04, 'triangle', catastrophic ? 276 : 378, catastrophic ? 192 : 324, catastrophic ? 1.25 : 0.78, gain * 0.22);
+    if (catastrophic) this.playNoiseBurst(now, 0.5, 34, 1600, 0.07);
+  }
+
+  silkSnap(heavy: boolean): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playNoiseBurst(now, heavy ? 0.34 : 0.16, 900, heavy ? 9200 : 6400, heavy ? 0.12 : 0.065);
+    this.playOscillator(now, 'sawtooth', heavy ? 420 : 650, heavy ? 92 : 210, heavy ? 0.3 : 0.13, heavy ? 0.065 : 0.032);
+  }
+
+  raidWarning(): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.playOscillator(now, 'square', 84, 74, 0.22, 0.035);
+    this.playOscillator(now + 0.28, 'square', 84, 74, 0.22, 0.035);
+  }
+
   enemyTell(weight: SwingWeight): void {
     const ctx = this.readyContext();
     if (!ctx) return;

@@ -30,14 +30,26 @@ export class CathedralApproach {
   private readonly bossFogPlanes: THREE.Mesh[] = [];
   private readonly bossFogGroup = new THREE.Group();
   private readonly bossExitGate = new THREE.Group();
+  private readonly widowFogPlanes: THREE.Mesh[] = [];
+  private readonly widowFogGroup = new THREE.Group();
+  private readonly widowExitGate = new THREE.Group();
+  private readonly widowWebs: THREE.Mesh[] = [];
   private bossFogBody!: RigidBody;
   private bossFogCollider!: Collider;
   private bossExitBody!: RigidBody;
   private bossExitCollider!: Collider;
+  private widowFogBody!: RigidBody;
+  private widowFogCollider!: Collider;
+  private widowExitBody!: RigidBody;
+  private widowExitCollider!: Collider;
   private bossEncounterActive = false;
   private bossDefeated = false;
+  private widowEncounterActive = false;
+  private widowDefeated = false;
   private bossFogBlend = 0;
   private bossExitBlend = 0;
+  private widowFogBlend = 0;
+  private widowExitBlend = 0;
   private elapsed = 0;
 
   constructor(scene: THREE.Scene, private readonly physics: PhysicsWorld) {
@@ -55,6 +67,7 @@ export class CathedralApproach {
     this.createBellCloister();
     this.createAshenAltar();
     this.createBossArena();
+    this.createWidowArena();
     this.createReturnPassages();
     this.createRubbleAndWear();
     this.createDynamicDebris();
@@ -72,6 +85,7 @@ export class CathedralApproach {
       banner.rotation.x = Math.sin(this.elapsed * 1.1 + phase * 0.7) * 0.025;
     }
     this.updateBossArena(delta);
+    this.updateWidowArena(delta);
     for (const debris of this.dynamicDebris) {
       debris.cooldown = Math.max(0, debris.cooldown - delta);
       const position = debris.body.translation();
@@ -87,9 +101,16 @@ export class CathedralApproach {
   }
 
 
-  setBossEncounterState(active: boolean, defeated: boolean): void {
-    this.bossEncounterActive = active;
-    this.bossDefeated = defeated;
+  setBossEncounterState(
+    varkanActive: boolean,
+    varkanDefeated: boolean,
+    widowActive: boolean,
+    widowDefeated: boolean,
+  ): void {
+    this.bossEncounterActive = varkanActive;
+    this.bossDefeated = varkanDefeated;
+    this.widowEncounterActive = widowActive;
+    this.widowDefeated = widowDefeated;
   }
 
   applyPlayerInfluence(position: THREE.Vector3, velocity: THREE.Vector3): void {
@@ -519,6 +540,159 @@ export class CathedralApproach {
     this.bossExitGate.position.y = exitY;
     this.bossExitBody.setNextKinematicTranslation({ x: 0, y: exitY, z: -117.85 });
     this.bossExitCollider.setEnabled(!this.bossDefeated || this.bossExitBlend <= 0.96);
+  }
+
+  private createWidowArena(): void {
+    // The second arena deliberately changes the combat silhouette: a narrow nave
+    // opens into a tall circular chamber where ceiling motion and floor telegraphs
+    // remain visible without letting the camera escape through the walls.
+    this.addStaticBox('widow-processional-bridge', [11.5, 1.0, 18], [0, 0.5, -126.5], this.wornStone, undefined, true);
+    this.addStaticBox('widow-bridge-west-rail', [1.1, 4.6, 18], [-6.2, 2.3, -126.5], this.basalt, undefined, true);
+    this.addStaticBox('widow-bridge-east-rail', [1.1, 4.6, 18], [6.2, 2.3, -126.5], this.basalt, undefined, true);
+    this.addStaticBox('widow-arena-floor', [31, 1.2, 35], [0, 0.6, -151.5], this.paleStone, undefined, true);
+    this.addStaticBox('widow-arena-west-wall', [1.5, 15.0, 36], [-15.7, 7.5, -151.5], this.basalt, undefined, true);
+    this.addStaticBox('widow-arena-east-wall', [1.5, 15.0, 36], [15.7, 7.5, -151.5], this.basalt, undefined, true);
+    this.addStaticBox('widow-arena-south-wall-left', [11.0, 15.0, 1.5], [-10.2, 7.5, -134.0], this.basalt, undefined, true);
+    this.addStaticBox('widow-arena-south-wall-right', [11.0, 15.0, 1.5], [10.2, 7.5, -134.0], this.basalt, undefined, true);
+    this.addStaticBox('widow-arena-north-wall-left', [11.0, 15.0, 1.5], [-10.2, 7.5, -169.0], this.basalt, undefined, true);
+    this.addStaticBox('widow-arena-north-wall-right', [11.0, 15.0, 1.5], [10.2, 7.5, -169.0], this.basalt, undefined, true);
+
+    const floorRing = new THREE.Mesh(new THREE.RingGeometry(7.4, 12.4, 96, 4), this.wornStone);
+    floorRing.rotation.x = -Math.PI / 2;
+    floorRing.position.set(0, 1.22, -151.5);
+    floorRing.receiveShadow = true;
+    this.group.add(floorRing);
+    for (let index = 0; index < 18; index += 1) {
+      const angle = (index / 18) * Math.PI * 2;
+      const radial = index % 3 === 0 ? 10.4 : 7.9;
+      const rune = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.035, 2.8), this.bronze);
+      rune.position.set(Math.sin(angle) * radial, 1.245, -151.5 + Math.cos(angle) * radial);
+      rune.rotation.y = angle;
+      this.group.add(rune);
+    }
+
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (index / 8) * Math.PI * 2;
+      const x = Math.sin(angle) * 12.3;
+      const z = -151.5 + Math.cos(angle) * 13.5;
+      this.createColumn(`widow-arena-column-${index}`, new THREE.Vector3(x, 1.2, z), 11.8, 0.76, index === 2 || index === 7);
+      const crown = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.13, 8, 32), this.bronze);
+      crown.position.set(x, 12.1, z);
+      crown.rotation.x = Math.PI / 2;
+      this.group.add(crown);
+    }
+
+    const ceiling = new THREE.Group();
+    ceiling.position.set(0, 12.6, -151.5);
+    const hub = new THREE.Mesh(new THREE.TorusGeometry(3.1, 0.22, 10, 48), this.blackIron);
+    hub.rotation.x = Math.PI / 2;
+    ceiling.add(hub);
+    for (let index = 0; index < 16; index += 1) {
+      const angle = (index / 16) * Math.PI * 2;
+      const strand = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.07, 12.8, 5), this.silkMaterial());
+      strand.position.set(Math.sin(angle) * 6.2, -0.7, Math.cos(angle) * 6.2);
+      strand.rotation.z = Math.sin(angle) * 1.04;
+      strand.rotation.x = Math.cos(angle) * 1.04;
+      strand.userData.phase = angle;
+      ceiling.add(strand);
+      this.widowWebs.push(strand);
+    }
+    for (let index = 0; index < 3; index += 1) {
+      const hangingBell = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.3, 1.8, 16, 1, true), this.bronze);
+      hangingBell.position.set((index - 1) * 6.8, -3.2 - (index % 2) * 1.1, index === 1 ? -5.5 : 4.5);
+      hangingBell.castShadow = true;
+      ceiling.add(hangingBell);
+    }
+    this.group.add(ceiling);
+
+    const fogMaterial = new THREE.MeshBasicMaterial({
+      color: 0xd0b7ae,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.widowFogGroup.position.set(0, 4.0, -134.1);
+    this.widowFogGroup.visible = false;
+    for (let index = 0; index < 10; index += 1) {
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(11.8, 6.1, 12, 6), fogMaterial.clone());
+      plane.position.z = (index - 4.5) * 0.065;
+      plane.userData.phase = index * 0.69;
+      this.widowFogGroup.add(plane);
+      this.widowFogPlanes.push(plane);
+    }
+    this.group.add(this.widowFogGroup);
+    this.widowFogBody = this.physics.world.createRigidBody(
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 4.0, -134.1),
+    );
+    this.widowFogCollider = this.physics.world.createCollider(
+      RAPIER.ColliderDesc.cuboid(5.9, 3.0, 0.28).setFriction(0.9),
+      this.widowFogBody,
+    );
+    this.widowFogCollider.setEnabled(false);
+
+    this.widowExitGate.position.set(0, 4.3, -168.7);
+    for (let index = -5; index <= 5; index += 1) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.13, 6.5, 0.16), this.blackIron);
+      bar.position.x = index * 0.84;
+      bar.castShadow = true;
+      this.widowExitGate.add(bar);
+    }
+    const cross = new THREE.Mesh(new THREE.BoxGeometry(9.4, 0.2, 0.2), this.blackIron);
+    this.widowExitGate.add(cross);
+    this.group.add(this.widowExitGate);
+    this.widowExitBody = this.physics.world.createRigidBody(
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 4.3, -168.7),
+    );
+    this.widowExitCollider = this.physics.world.createCollider(
+      RAPIER.ColliderDesc.cuboid(4.7, 3.25, 0.3).setFriction(0.9),
+      this.widowExitBody,
+    );
+
+    this.atmosphere.addTorch(new THREE.Vector3(-11.8, 4.0, -141.0), 58);
+    this.atmosphere.addTorch(new THREE.Vector3(11.8, 4.0, -141.0), 58);
+    this.atmosphere.addTorch(new THREE.Vector3(-11.8, 4.0, -162.0), 62);
+    this.atmosphere.addTorch(new THREE.Vector3(11.8, 4.0, -162.0), 62);
+  }
+
+  private updateWidowArena(delta: number): void {
+    const fogTarget = this.widowEncounterActive && !this.widowDefeated ? 1 : 0;
+    this.widowFogBlend += (fogTarget - this.widowFogBlend) * (1 - Math.exp(-6.2 * delta));
+    this.widowFogGroup.visible = this.widowFogBlend > 0.015;
+    this.widowFogPlanes.forEach((plane, index) => {
+      const phase = Number(plane.userData.phase ?? index);
+      const material = plane.material as THREE.MeshBasicMaterial;
+      material.opacity = this.widowFogBlend * (0.1 + (index % 4) * 0.028);
+      plane.position.x = Math.sin(this.elapsed * (0.7 + index * 0.018) + phase) * 0.28;
+      plane.scale.y = 1 + Math.sin(this.elapsed * 1.15 + phase) * 0.055;
+    });
+    this.widowFogCollider.setEnabled(fogTarget > 0.5);
+
+    const exitTarget = this.widowDefeated ? 1 : 0;
+    this.widowExitBlend += (exitTarget - this.widowExitBlend) * (1 - Math.exp(-2.1 * delta));
+    const eased = this.widowExitBlend * this.widowExitBlend * (3 - 2 * this.widowExitBlend);
+    const exitY = THREE.MathUtils.lerp(4.3, 11.6, eased);
+    this.widowExitGate.position.y = exitY;
+    this.widowExitBody.setNextKinematicTranslation({ x: 0, y: exitY, z: -168.7 });
+    this.widowExitCollider.setEnabled(!this.widowDefeated || this.widowExitBlend <= 0.96);
+
+    this.widowWebs.forEach((web, index) => {
+      const phase = Number(web.userData.phase ?? index);
+      web.rotation.y = Math.sin(this.elapsed * 0.42 + phase) * 0.08;
+      web.scale.y = 1 + Math.sin(this.elapsed * 0.9 + phase) * 0.025;
+    });
+  }
+
+  private silkMaterial(): THREE.MeshStandardMaterial {
+    return new THREE.MeshStandardMaterial({
+      color: 0xb8afa3,
+      roughness: 0.64,
+      emissive: 0x261b1d,
+      emissiveIntensity: 0.32,
+      transparent: true,
+      opacity: 0.58,
+    });
   }
 
   private createReturnPassages(): void {

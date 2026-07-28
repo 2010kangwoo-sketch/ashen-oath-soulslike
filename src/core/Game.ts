@@ -214,7 +214,13 @@ export class Game {
     const presentationDelta = this.hitStopRemaining > 0 ? delta * 0.08 : delta;
     this.audio.update(delta);
     while (this.player.consumeFootstep()) this.audio.footstep(this.player.getSprintBlend());
-    this.world.setBossEncounterState(this.combat.isBossEncounterActive(), this.combat.isBossDefeated());
+    const bossWorldState = this.combat.getBossWorldState();
+    this.world.setBossEncounterState(
+      bossWorldState.varkanActive,
+      bossWorldState.varkanDefeated,
+      bossWorldState.widowActive,
+      bossWorldState.widowDefeated,
+    );
     this.world.update(delta);
     this.player.updateVisual(presentationDelta);
     this.combat.updateVisual(presentationDelta);
@@ -239,7 +245,9 @@ export class Game {
     this.hud.setPlayerState(this.player.getMotionState(), this.player.getSpeed(), this.player.isGrounded());
     this.hud.setVitals(this.player.getHealthRatio(), this.player.getStaminaRatio());
     this.hud.setCharge(this.player.getChargeRatio());
-    this.hud.setBoss(this.combat.getBossSnapshot(), this.combat.consumeBossPresentationEvent());
+    const bossSnapshot = this.combat.getBossSnapshot();
+    this.hud.setBoss(bossSnapshot, this.combat.consumeBossPresentationEvent());
+    this.pipeline.setBossState(bossSnapshot);
     this.hud.setLockTarget(this.combat.getLockSnapshot(), this.camera);
     this.hud.setDeathState(this.player.isDead());
     this.hud.setProgression(this.progression.getSnapshot(this.player));

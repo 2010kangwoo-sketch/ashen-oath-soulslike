@@ -62,7 +62,7 @@
             <span id="boss-phase-label">I · 검은 방패</span>
           </div>
           <div class="boss-health-track"><span id="boss-health-fill"></span></div>
-          <div id="boss-shield-track" class="boss-shield-track"><span id="boss-shield-fill"></span></div>
+          <div id="boss-shield-track" class="boss-shield-track"><small id="boss-secondary-label">방패 내구도</small><span id="boss-shield-fill"></span></div>
           <div class="boss-poise-track"><span id="boss-poise-fill"></span></div>
         </div>
 
@@ -73,15 +73,23 @@
         </div>
 
         <div id="boss-phase-banner" class="boss-cinematic boss-phase-banner is-hidden" role="status">
-          <p>두 번째 서약</p>
-          <h2>방패를 버린 맹세의 칼날</h2>
+          <p id="boss-phase-kicker">두 번째 서약</p>
+          <h2 id="boss-phase-title">방패를 버린 맹세의 칼날</h2>
           <span></span>
         </div>
 
         <div id="boss-victory" class="boss-cinematic boss-victory is-hidden" role="status">
-          <p>서약의 문이 열렸습니다</p>
-          <h2>문지기 격파</h2>
+          <p id="boss-victory-kicker">서약의 문이 열렸습니다</p>
+          <h2 id="boss-victory-title">문지기 격파</h2>
           <span></span>
+        </div>
+
+        <div id="raid-mechanic" class="raid-mechanic is-hidden" role="status">
+          <div>
+            <strong id="raid-mechanic-name">종의 공명</strong>
+            <span id="raid-mechanic-hint">울리는 종에서 멀어져라</span>
+          </div>
+          <div class="raid-mechanic-track"><span id="raid-mechanic-fill"></span></div>
         </div>
 
         <div id="execution-prompt" class="execution-prompt is-hidden"><kbd>E</kbd><span>처형</span></div>

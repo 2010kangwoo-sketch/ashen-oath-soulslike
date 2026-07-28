@@ -441,3 +441,80 @@ kbd { min-width: 58px; padding: 1px 5px; border: 1px solid rgba(181, 171, 154, 0
   .boss-heading > span { font-size: .6rem; }
   .boss-health-track { height: 9px; }
 }
+
+/* Production Pass 7: raid-scale mechanic readability */
+.boss-shield-track { overflow: visible; }
+.boss-shield-track > span { overflow: hidden; }
+.boss-shield-track small {
+  position: absolute;
+  left: 0;
+  top: -14px;
+  color: rgba(201, 188, 166, .66);
+  font-family: Georgia, serif;
+  font-size: .54rem;
+  font-weight: 400;
+  letter-spacing: .13em;
+  white-space: nowrap;
+}
+.raid-mechanic {
+  position: absolute;
+  left: 50%;
+  top: clamp(92px, 16vh, 164px);
+  width: min(560px, 72vw);
+  transform: translateX(-50%);
+  color: #d7cfc4;
+  text-align: center;
+  text-shadow: 0 3px 18px #000;
+  pointer-events: none;
+  animation: raid-mechanic-enter 220ms ease-out both;
+}
+.raid-mechanic > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 15px;
+  padding: 5px 14px 7px;
+  background: linear-gradient(90deg, transparent, rgba(9, 8, 8, .72), transparent);
+}
+.raid-mechanic strong {
+  color: #d9b7a0;
+  font-family: Georgia, serif;
+  font-size: clamp(.78rem, 1.5vw, 1rem);
+  font-weight: 400;
+  letter-spacing: .18em;
+}
+.raid-mechanic span {
+  color: #aaa198;
+  font-size: clamp(.64rem, 1.2vw, .76rem);
+  letter-spacing: .08em;
+}
+.raid-mechanic-track {
+  width: 100%;
+  height: 2px;
+  background: rgba(190, 174, 156, .16);
+  overflow: hidden;
+}
+.raid-mechanic-track span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  background: linear-gradient(90deg, #7d4a3d, #d6aa83 70%, #f0d7b5);
+  box-shadow: 0 0 12px rgba(218, 157, 109, .45);
+}
+.raid-mechanic.danger strong { color: #e18f72; }
+.raid-mechanic.danger .raid-mechanic-track span {
+  background: linear-gradient(90deg, #6f1c1c, #d14f38 72%, #f0a178);
+  box-shadow: 0 0 14px rgba(218, 68, 47, .52);
+}
+@keyframes raid-mechanic-enter {
+  from { opacity: 0; transform: translate(-50%, -8px); filter: blur(3px); }
+  to { opacity: 1; transform: translate(-50%, 0); filter: blur(0); }
+}
+@media (max-width: 760px) {
+  .raid-mechanic { top: 88px; width: 88vw; }
+  .raid-mechanic > div:first-child { display: block; }
+  .raid-mechanic strong, .raid-mechanic span { display: block; }
+  .raid-mechanic span { margin-top: 3px; }
+  .boss-shield-track small { display: none; }
+}

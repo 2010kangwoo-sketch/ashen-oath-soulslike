@@ -61,9 +61,12 @@ export class ThirdPersonCamera {
       this.velocityLookAhead.setLength(GAME_CONFIG.camera.maxLookAhead);
     }
     this.desiredTarget.copy(target).add(this.velocityLookAhead);
+    let verticalLockSpan = 0;
     if (lockTarget) {
       const weightedLockTarget = lockTarget.clone();
-      weightedLockTarget.y = THREE.MathUtils.lerp(target.y, lockTarget.y, 0.42);
+      verticalLockSpan = Math.abs(lockTarget.y - target.y);
+      const verticalWeight = THREE.MathUtils.clamp(0.4 - verticalLockSpan * 0.014, 0.24, 0.4);
+      weightedLockTarget.y = THREE.MathUtils.lerp(target.y, lockTarget.y, verticalWeight);
       this.desiredTarget.lerp(weightedLockTarget, GAME_CONFIG.camera.lockTargetWeight * this.lockBlend);
     }
     const targetAlpha = 1 - Math.exp(-GAME_CONFIG.camera.targetSharpness * delta);
@@ -74,10 +77,12 @@ export class ThirdPersonCamera {
       this.smoothedTarget.lerp(this.desiredTarget, targetAlpha);
     }
 
-    const horizontal = Math.cos(this.pitch) * this.distance;
+    const encounterFraming = THREE.MathUtils.clamp(verticalLockSpan * 0.24, 0, 2.65) * this.lockBlend;
+    const framedDistance = this.distance + encounterFraming;
+    const horizontal = Math.cos(this.pitch) * framedDistance;
     this.cameraVector.set(
       Math.sin(this.yaw) * horizontal,
-      Math.sin(this.pitch) * this.distance,
+      Math.sin(this.pitch) * framedDistance,
       Math.cos(this.yaw) * horizontal,
     );
     this.shoulder.copy(this.planarRight).multiplyScalar(GAME_CONFIG.camera.shoulderOffset);

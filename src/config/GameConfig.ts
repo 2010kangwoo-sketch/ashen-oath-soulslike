@@ -1,6 +1,6 @@
 export const GAME_CONFIG = {
   title: 'Ashen Oath',
-  pass: 6,
+  pass: 7,
   renderer: {
     maxPixelRatio: 1.65,
     shadowMapSize: 2048,
@@ -156,5 +156,6 @@ export const GAME_CONFIG = {
     interactionRadius: 2.35,
     threatRadius: 8.5,
     bossTriggerZ: -90.2,
+    widowTriggerZ: -136.0,
   },
 } as const;

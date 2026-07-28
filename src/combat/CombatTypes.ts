@@ -2,6 +2,8 @@ import type * as THREE from 'three';
 
 export type PlayerAttackId = 'light1' | 'light2' | 'light3' | 'heavy';
 
+export type AttackShape = 'cone' | 'radial' | 'line' | 'donut';
+
 export interface AttackPulse {
   readonly source: 'player' | 'enemy';
   readonly position: THREE.Vector3;
@@ -15,6 +17,9 @@ export interface AttackPulse {
   readonly guardable?: boolean;
   readonly parryable?: boolean;
   readonly radial?: boolean;
+  readonly shape?: AttackShape;
+  readonly innerRange?: number;
+  readonly width?: number;
 }
 
 export type EnemyDamageResult = 'ignored' | 'hit' | 'broken' | 'killed';
@@ -28,6 +33,8 @@ export interface LockTargetSnapshot {
   readonly active: boolean;
 }
 
+export type BossPresentationEvent = 'intro' | 'phase2' | 'defeated';
+
 export interface BossSnapshot {
   readonly name: string;
   readonly epithet: string;
@@ -39,4 +46,14 @@ export interface BossSnapshot {
   readonly intro: boolean;
   readonly phaseTransition: boolean;
   readonly defeated: boolean;
+  readonly phaseLabel?: string;
+  readonly secondaryLabel?: string;
+  readonly transitionKicker?: string;
+  readonly transitionTitle?: string;
+  readonly victoryKicker?: string;
+  readonly victoryTitle?: string;
+  readonly mechanicName?: string;
+  readonly mechanicHint?: string;
+  readonly mechanicProgress?: number;
+  readonly mechanicDanger?: boolean;
 }

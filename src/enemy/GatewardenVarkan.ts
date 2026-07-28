@@ -7,12 +7,13 @@ import RAPIER, {
 import type { AudioDirector, SwingWeight } from '../audio/AudioDirector';
 import type {
   AttackPulse,
+  BossPresentationEvent,
   BossSnapshot,
   EnemyDamageResult,
   LockTargetSnapshot,
 } from '../combat/CombatTypes';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
-import type { CombatEnemy } from './CombatEnemy';
+import type { BossEnemy } from './BossEnemy';
 
 type BossState =
   | 'sealed'
@@ -130,9 +131,7 @@ const ATTACKS: Record<BossAttackId, BossAttackProfile> = {
   },
 };
 
-export type BossPresentationEvent = 'intro' | 'phase2' | 'defeated';
-
-export class GatewardenVarkan implements CombatEnemy {
+export class GatewardenVarkan implements BossEnemy {
   readonly id = 'gatewarden-varkan';
   readonly displayName = '문지기 바르칸';
   readonly ashReward = 1400;
@@ -240,7 +239,6 @@ export class GatewardenVarkan implements CombatEnemy {
     });
     const blackIron = new THREE.MeshStandardMaterial({ color: 0x111416, roughness: 0.56, metalness: 0.78 });
     const edge = new THREE.MeshStandardMaterial({ color: 0x77736a, roughness: 0.26, metalness: 0.94 });
-    const leather = new THREE.MeshStandardMaterial({ color: 0x261b16, roughness: 0.9, metalness: 0.02 });
     const cloth = new THREE.MeshStandardMaterial({ color: 0x241618, roughness: 0.94, side: THREE.DoubleSide });
     this.eyeMaterial = new THREE.MeshStandardMaterial({
       color: 0xdfaa61,
@@ -549,6 +547,12 @@ export class GatewardenVarkan implements CombatEnemy {
       intro: this.state === 'intro',
       phaseTransition: this.state === 'phaseBreak',
       defeated: this.state === 'dead',
+      phaseLabel: this.phase === 1 ? 'I · 검은 방패' : 'II · 맹세의 칼날',
+      secondaryLabel: '방패 내구도',
+      transitionKicker: '두 번째 서약',
+      transitionTitle: '방패를 버린 맹세의 칼날',
+      victoryKicker: '서약의 문이 열렸습니다',
+      victoryTitle: '문지기 격파',
     };
   }
 
@@ -672,7 +676,8 @@ export class GatewardenVarkan implements CombatEnemy {
     const phaseOne: readonly BossAttackId[] = ['shieldRush', 'bladeChain', 'shieldSlam', 'delayedOverhead', 'bladeChain'];
     const phaseTwo: readonly BossAttackId[] = ['crossCut', 'frenzyChain', 'leapSlam', 'oathfireSweep', 'crossCut', 'frenzyChain'];
     const sequence = this.phase === 1 ? phaseOne : phaseTwo;
-    let chosen = sequence[this.attackCycle % sequence.length] ?? sequence[0];
+    const fallback: BossAttackId = this.phase === 1 ? 'shieldRush' : 'crossCut';
+    let chosen: BossAttackId = sequence[this.attackCycle % sequence.length] ?? fallback;
     if (this.phase === 1 && distance > 5.4) chosen = 'shieldRush';
     if (this.phase === 2 && distance > 6.2) chosen = 'leapSlam';
     if (this.phase === 2 && distance < 2.4 && this.attackCycle % 2 === 0) chosen = 'oathfireSweep';

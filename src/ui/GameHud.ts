@@ -1,6 +1,5 @@
 import type { Camera } from 'three';
-import type { BossSnapshot, LockTargetSnapshot } from '../combat/CombatTypes';
-import type { BossPresentationEvent } from '../enemy/GatewardenVarkan';
+import type { BossPresentationEvent, BossSnapshot, LockTargetSnapshot } from '../combat/CombatTypes';
 import type { PlayerMotionState } from '../player/PlayerController';
 import type { ProgressionSnapshot } from '../progression/ProgressionDirector';
 
@@ -39,12 +38,21 @@ export class GameHud {
   private readonly bossPoiseFill: HTMLElement;
   private readonly bossShieldTrack: HTMLElement;
   private readonly bossShieldFill: HTMLElement;
+  private readonly bossSecondaryLabel: HTMLElement;
   private readonly bossPhaseLabel: HTMLElement;
   private readonly bossIntro: HTMLElement;
   private readonly bossIntroEpithet: HTMLElement;
   private readonly bossIntroName: HTMLElement;
   private readonly bossPhaseBanner: HTMLElement;
+  private readonly bossPhaseKicker: HTMLElement;
+  private readonly bossPhaseTitle: HTMLElement;
   private readonly bossVictory: HTMLElement;
+  private readonly bossVictoryKicker: HTMLElement;
+  private readonly bossVictoryTitle: HTMLElement;
+  private readonly raidMechanic: HTMLElement;
+  private readonly raidMechanicName: HTMLElement;
+  private readonly raidMechanicHint: HTMLElement;
+  private readonly raidMechanicFill: HTMLElement;
   private currentArea = '';
   private bossActive = false;
   private debugVisible = false;
@@ -84,12 +92,21 @@ export class GameHud {
     this.bossPoiseFill = this.requireElement('boss-poise-fill');
     this.bossShieldTrack = this.requireElement('boss-shield-track');
     this.bossShieldFill = this.requireElement('boss-shield-fill');
+    this.bossSecondaryLabel = this.requireElement('boss-secondary-label');
     this.bossPhaseLabel = this.requireElement('boss-phase-label');
     this.bossIntro = this.requireElement('boss-intro');
     this.bossIntroEpithet = this.requireElement('boss-intro-epithet');
     this.bossIntroName = this.requireElement('boss-intro-name');
     this.bossPhaseBanner = this.requireElement('boss-phase-banner');
+    this.bossPhaseKicker = this.requireElement('boss-phase-kicker');
+    this.bossPhaseTitle = this.requireElement('boss-phase-title');
     this.bossVictory = this.requireElement('boss-victory');
+    this.bossVictoryKicker = this.requireElement('boss-victory-kicker');
+    this.bossVictoryTitle = this.requireElement('boss-victory-title');
+    this.raidMechanic = this.requireElement('raid-mechanic');
+    this.raidMechanicName = this.requireElement('raid-mechanic-name');
+    this.raidMechanicHint = this.requireElement('raid-mechanic-hint');
+    this.raidMechanicFill = this.requireElement('raid-mechanic-fill');
   }
 
   reveal(): void {
@@ -160,10 +177,20 @@ export class GameHud {
       this.bossPoiseFill.style.transform = `scaleX(${clamp01(snapshot.poiseRatio)})`;
       this.bossShieldFill.style.transform = `scaleX(${clamp01(snapshot.shieldRatio)})`;
       this.bossShieldTrack.classList.toggle('is-hidden', snapshot.phase !== 1 || snapshot.shieldRatio <= 0);
-      this.bossPhaseLabel.textContent = snapshot.phase === 1 ? 'I · 검은 방패' : 'II · 맹세의 칼날';
+      this.bossSecondaryLabel.textContent = snapshot.secondaryLabel ?? '보조 내구도';
+      this.bossPhaseLabel.textContent = snapshot.phaseLabel ?? (snapshot.phase === 1 ? 'I' : 'II');
       this.root.classList.toggle('boss-phase-two', snapshot.phase === 2 || snapshot.phaseTransition);
+      const mechanicVisible = Boolean(snapshot.mechanicName);
+      this.raidMechanic.classList.toggle('is-hidden', !mechanicVisible);
+      this.raidMechanic.classList.toggle('danger', snapshot.mechanicDanger ?? false);
+      if (mechanicVisible) {
+        this.raidMechanicName.textContent = snapshot.mechanicName ?? '';
+        this.raidMechanicHint.textContent = snapshot.mechanicHint ?? '';
+        this.raidMechanicFill.style.transform = `scaleX(${clamp01(snapshot.mechanicProgress ?? 0)})`;
+      }
     } else {
       this.root.classList.remove('boss-phase-two');
+      this.raidMechanic.classList.add('is-hidden');
     }
 
     if (event === 'intro') {
@@ -171,9 +198,14 @@ export class GameHud {
       this.bossIntroName.textContent = snapshot.name;
       this.showTimedPanel(this.bossIntro, 2700);
     } else if (event === 'phase2') {
+      this.bossPhaseKicker.textContent = snapshot.transitionKicker ?? '두 번째 서약';
+      this.bossPhaseTitle.textContent = snapshot.transitionTitle ?? snapshot.epithet;
       this.showTimedPanel(this.bossPhaseBanner, 2300);
     } else if (event === 'defeated') {
+      this.bossVictoryKicker.textContent = snapshot.victoryKicker ?? '전투가 끝났습니다';
+      this.bossVictoryTitle.textContent = snapshot.victoryTitle ?? `${snapshot.name} 격파`;
       this.bossPanel.classList.add('is-hidden');
+      this.raidMechanic.classList.add('is-hidden');
       this.showTimedPanel(this.bossVictory, 4200);
     }
   }

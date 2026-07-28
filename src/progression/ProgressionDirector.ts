@@ -201,6 +201,7 @@ export class ProgressionDirector {
       { id: 'gate', name: '무너진 성문', position: new THREE.Vector3(-3.5, 0.28, 23.5), respawn: new THREE.Vector3(0, 1.12, 22) },
       { id: 'cloister', name: '종루 회랑', position: new THREE.Vector3(23.2, 3.42, -36.5), respawn: new THREE.Vector3(20.8, 3.56, -34.5) },
       { id: 'altar', name: '잿빛 제단', position: new THREE.Vector3(0, 1.36, -58.8), respawn: new THREE.Vector3(0, 1.62, -56.2) },
+      { id: 'widow-nave', name: '끊어진 종의 회랑', position: new THREE.Vector3(-3.2, 1.18, -125.2), respawn: new THREE.Vector3(0, 2.12, -124.2) },
     ] as const;
     definitions.forEach((definition, index) => {
       const root = new THREE.Group();
@@ -434,10 +435,22 @@ export class ProgressionDirector {
   }
 
   private updateArea(position: THREE.Vector3, combat: CombatDirector): void {
-    if (position.z < -88) {
+    if (position.z < -134) {
+      this.areaName = '공허한 종의 심장';
+      this.objective = combat.isWidowDefeated()
+        ? '침묵한 종루 뒤의 열린 길로 향하라'
+        : combat.isWidowEncounterActive()
+          ? '종을 삼킨 과부를 쓰러뜨려라'
+          : '매달린 종을 끊고 과부에게 도전하라';
+    } else if (position.z < -118) {
+      this.areaName = '끊어진 종의 회랑';
+      this.objective = combat.isWidowDefeated()
+        ? '공허한 종루를 지나 북쪽 문으로 향하라'
+        : '서약석을 밝히고 두 번째 안개문을 넘어라';
+    } else if (position.z < -88) {
       this.areaName = '서약의 문 앞뜰';
       this.objective = combat.isBossDefeated()
-        ? '쓰러진 문지기 뒤의 열린 문으로 향하라'
+        ? '문지기 뒤의 열린 길에서 서약석을 찾아라'
         : combat.isBossEncounterActive()
           ? '문지기 바르칸을 쓰러뜨려라'
           : '안개문 너머의 수호자에게 도전하라';
