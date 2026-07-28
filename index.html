@@ -150,6 +150,74 @@
         </div>
       </section>
 
+
+      <section id="title-screen" class="front-menu title-screen is-hidden" aria-label="시작 화면">
+        <div class="menu-backdrop"></div>
+        <div class="menu-panel title-panel">
+          <p class="menu-kicker">A DARK FANTASY ACTION RPG</p>
+          <div class="title-emblem" aria-hidden="true"><span></span></div>
+          <h1>ASHEN OATH</h1>
+          <p class="title-korean">잿빛 서약</p>
+          <p class="title-copy">세 번의 종을 지나, 마지막 서약의 주인을 베어라.</p>
+          <div class="menu-actions">
+            <button id="continue-button" type="button">이어하기</button>
+            <button id="new-game-button" type="button">새 서약</button>
+            <button id="title-settings-button" type="button">설정</button>
+          </div>
+          <p id="save-summary" class="save-summary is-hidden"></p>
+          <p class="menu-build">PRODUCTION BUILD · PASS 9</p>
+        </div>
+      </section>
+
+      <section id="pause-screen" class="front-menu pause-screen is-hidden" aria-label="일시정지 메뉴">
+        <div class="menu-backdrop pause-backdrop"></div>
+        <div class="menu-panel pause-panel">
+          <p class="menu-kicker">THE OATH WAITS</p>
+          <h2>일시정지</h2>
+          <div class="menu-actions">
+            <button id="resume-button" type="button">계속하기</button>
+            <button id="restart-button" type="button">마지막 서약석에서 다시 시작</button>
+            <button id="pause-settings-button" type="button">설정</button>
+            <button id="return-title-button" type="button">시작 화면으로</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="settings-screen" class="front-menu settings-screen is-hidden" aria-label="게임 설정">
+        <div class="menu-backdrop pause-backdrop"></div>
+        <div class="menu-panel settings-panel">
+          <p class="menu-kicker">SYSTEM</p>
+          <h2>설정</h2>
+          <label class="setting-row">
+            <span><strong>그래픽 품질</strong><small>해상도, 그림자, 블룸 효과를 조절합니다.</small></span>
+            <select id="quality-setting">
+              <option value="performance">성능 우선</option>
+              <option value="balanced">균형</option>
+              <option value="cinematic">시네마틱</option>
+            </select>
+          </label>
+          <label class="setting-row">
+            <span><strong>전체 음량</strong><small>전투와 환경 음향의 전체 크기입니다.</small></span>
+            <span class="range-control"><input id="volume-setting" type="range" min="0" max="1" step="0.05" /><output id="volume-value">80%</output></span>
+          </label>
+          <label class="setting-row">
+            <span><strong>카메라 충격</strong><small>타격과 보스 패턴의 화면 흔들림 강도입니다.</small></span>
+            <span class="range-control"><input id="shake-setting" type="range" min="0" max="1" step="0.05" /><output id="shake-value">80%</output></span>
+          </label>
+          <label class="setting-row">
+            <span><strong>마우스 감도</strong><small>시점 회전 속도를 조절합니다.</small></span>
+            <span class="range-control"><input id="sensitivity-setting" type="range" min="0.5" max="1.6" step="0.05" /><output id="sensitivity-value">1.00×</output></span>
+          </label>
+          <label class="setting-row check-setting">
+            <span><strong>조작 안내 표시</strong><small>게임 화면 오른쪽의 조작 도움말을 표시합니다.</small></span>
+            <input id="help-setting" type="checkbox" />
+          </label>
+          <button id="settings-back-button" class="settings-back" type="button">돌아가기</button>
+        </div>
+      </section>
+
+      <div id="autosave-indicator" class="autosave-indicator is-hidden" role="status"><span></span>서약을 기록하는 중</div>
+
       <div id="fatal-error" class="fatal-error is-hidden" role="alert"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

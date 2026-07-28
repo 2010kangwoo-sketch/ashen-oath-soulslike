@@ -6,6 +6,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import type { BossSnapshot } from '../combat/CombatTypes';
 import type { EndingChoice } from '../progression/ProgressionDirector';
+import type { QualityPreset } from '../settings/GameSettings';
 
 const CinematicShader = {
   uniforms: {
@@ -84,6 +85,7 @@ export class RenderPipeline {
   private endingTarget = 0;
   private endingIntensity = 0;
   private endingSever = 0;
+  private quality: QualityPreset = 'balanced';
 
   constructor(
     renderer: THREE.WebGLRenderer,
@@ -102,6 +104,16 @@ export class RenderPipeline {
   resize(width: number, height: number, pixelRatio: number): void {
     this.composer.setPixelRatio(pixelRatio);
     this.composer.setSize(width, height);
+  }
+
+
+  setQuality(preset: QualityPreset): void {
+    this.quality = preset;
+    const grain = preset === 'performance' ? 0.012 : preset === 'cinematic' ? 0.026 : 0.019;
+    const vignette = preset === 'performance' ? 0.44 : preset === 'cinematic' ? 0.56 : 0.5;
+    this.cinematicPass.uniforms['grainStrength']!.value = grain;
+    this.cinematicPass.uniforms['vignetteStrength']!.value = vignette;
+    this.bloomPass.threshold = preset === 'performance' ? 0.91 : preset === 'cinematic' ? 0.82 : 0.87;
   }
 
   setBossState(snapshot: BossSnapshot): void {
@@ -123,8 +135,9 @@ export class RenderPipeline {
     this.cinematicPass.uniforms['mechanicDanger']!.value = this.dangerIntensity;
     this.cinematicPass.uniforms['endingIntensity']!.value = this.endingIntensity;
     this.cinematicPass.uniforms['endingSever']!.value = this.endingSever;
-    this.bloomPass.strength = 0.18 + this.encounterIntensity * 0.14 + this.dangerIntensity * 0.16 + this.endingIntensity * 0.08;
-    this.bloomPass.radius = 0.42 + this.dangerIntensity * 0.08;
+    const qualityBloom = this.quality === 'performance' ? 0.58 : this.quality === 'cinematic' ? 1.12 : 0.86;
+    this.bloomPass.strength = (0.18 + this.encounterIntensity * 0.14 + this.dangerIntensity * 0.16 + this.endingIntensity * 0.08) * qualityBloom;
+    this.bloomPass.radius = (0.42 + this.dangerIntensity * 0.08) * (this.quality === 'performance' ? 0.82 : 1);
     this.composer.render(delta);
   }
 

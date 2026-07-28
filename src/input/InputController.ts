@@ -19,6 +19,7 @@ export class InputController {
   private mouseGuarding = false;
   private mouseHeavyHeld = false;
   private gamepadHeavyHeld = false;
+  private enabled = false;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener('keydown', this.onKeyDown);
@@ -29,6 +30,13 @@ export class InputController {
   }
 
   update(): void {
+    if (!this.enabled) {
+      this.moveAxes = { horizontal: 0, vertical: 0 };
+      this.lookAxes = { horizontal: 0, vertical: 0 };
+      this.running = false;
+      this.guarding = false;
+      return;
+    }
     const keyboardX = Number(this.held.has('KeyD') || this.held.has('ArrowRight'))
       - Number(this.held.has('KeyA') || this.held.has('ArrowLeft'));
     const keyboardY = Number(this.held.has('KeyW') || this.held.has('ArrowUp'))
@@ -72,6 +80,11 @@ export class InputController {
     this.guarding = this.mouseGuarding || gamepadGuard;
   }
 
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) this.clearState();
+  }
+
   getMoveAxes(): MoveAxes { return this.moveAxes; }
   getLookAxes(): LookAxes { return this.lookAxes; }
   isRunning(): boolean { return this.running; }
@@ -103,6 +116,7 @@ export class InputController {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (!this.enabled) return;
     if (BLOCKED_KEYS.has(event.code)) event.preventDefault();
     const firstPress = !this.held.has(event.code);
     this.held.add(event.code);
@@ -115,10 +129,12 @@ export class InputController {
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
+    if (!this.enabled) return;
     this.held.delete(event.code);
   };
 
   private readonly onMouseDown = (event: MouseEvent): void => {
+    if (!this.enabled) return;
     if (document.pointerLockElement !== this.canvas) return;
     if (event.button === 0) {
       const heavyModifier = this.held.has('ShiftLeft') || this.held.has('ShiftRight');
@@ -129,11 +145,16 @@ export class InputController {
   };
 
   private readonly onMouseUp = (event: MouseEvent): void => {
+    if (!this.enabled) return;
     if (event.button === 0) this.mouseHeavyHeld = false;
     if (event.button === 2) this.mouseGuarding = false;
   };
 
   private readonly onBlur = (): void => {
+    this.clearState();
+  };
+
+  private clearState(): void {
     this.held.clear();
     this.pressedActions.clear();
     this.moveAxes = { horizontal: 0, vertical: 0 };
@@ -143,7 +164,8 @@ export class InputController {
     this.mouseGuarding = false;
     this.mouseHeavyHeld = false;
     this.gamepadHeavyHeld = false;
-  };
+    this.previousGamepadButtons.clear();
+  }
 }
 
 function applyDeadzone(value: number, deadzone: number): number {

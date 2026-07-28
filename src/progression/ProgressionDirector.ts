@@ -30,6 +30,16 @@ export interface ProgressionSnapshot {
   readonly ending: EndingSnapshot;
 }
 
+export interface ProgressionSaveState {
+  readonly ash: number;
+  readonly recoveryAsh: number;
+  readonly recoveryPosition: readonly [number, number, number] | null;
+  readonly activeShrineId: string;
+  readonly activatedShrineIds: readonly string[];
+  readonly openedShortcutIds: readonly string[];
+  readonly endingsSeen: readonly EndingChoice[];
+}
+
 interface Shrine {
   readonly id: string;
   readonly name: string;
@@ -89,6 +99,8 @@ export class ProgressionDirector {
   private time = 0;
   private endingChoice: EndingChoice | null = null;
   private endingTimer = 0;
+  private readonly endingsSeen = new Set<EndingChoice>();
+  private saveRequested = false;
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -140,6 +152,7 @@ export class ProgressionDirector {
       this.ash += reward;
       this.showNotice(`재의 흔적 +${reward}`, 1.65);
       this.audio.collectAsh();
+      this.saveRequested = true;
     }
 
     this.updateShrines(delta);
@@ -225,9 +238,94 @@ export class ProgressionDirector {
       closestShortcut.open = true;
       this.audio.shortcut();
       this.showNotice(`${closestShortcut.name} 지름길이 열렸습니다`, 2.4);
+      this.saveRequested = true;
       return true;
     }
     return false;
+  }
+
+
+
+  consumeSaveRequest(): boolean {
+    const requested = this.saveRequested;
+    this.saveRequested = false;
+    return requested;
+  }
+
+  startNewGame(player: PlayerController, combat: CombatDirector): void {
+    this.ash = 0;
+    this.recoveryAsh = 0;
+    this.recoveryPosition = null;
+    this.recoveryRoot.visible = false;
+    this.deathHandled = false;
+    this.respawnTimer = 0;
+    this.endingChoice = null;
+    this.endingTimer = 0;
+    this.endingsSeen.clear();
+    this.saveRequested = false;
+    this.activeShrine = this.shrines[0]!;
+    this.shrines.forEach((shrine, index) => { shrine.activated = index === 0; });
+    for (const shortcut of this.shortcuts) this.applyShortcutState(shortcut, false);
+    combat.reset();
+    player.reset();
+    this.showNotice('새로운 서약이 시작되었습니다', 2.2);
+  }
+
+  restartAtCheckpoint(player: PlayerController, combat: CombatDirector): void {
+    this.deathHandled = false;
+    this.respawnTimer = 0;
+    this.endingChoice = null;
+    this.endingTimer = 0;
+    player.respawnAt(this.activeShrine.respawn);
+    player.refillFlasks();
+    combat.resetAtRest();
+    this.showNotice(`${this.activeShrine.name}에서 다시 시작합니다`, 2.1);
+  }
+
+  getSaveState(): ProgressionSaveState {
+    const recoveryPosition = this.recoveryPosition
+      ? [this.recoveryPosition.x, this.recoveryPosition.y, this.recoveryPosition.z] as const
+      : null;
+    return {
+      ash: Math.max(0, Math.floor(this.ash)),
+      recoveryAsh: Math.max(0, Math.floor(this.recoveryAsh)),
+      recoveryPosition,
+      activeShrineId: this.activeShrine.id,
+      activatedShrineIds: this.shrines.filter((shrine) => shrine.activated).map((shrine) => shrine.id),
+      openedShortcutIds: this.shortcuts.filter((shortcut) => shortcut.open).map((shortcut) => shortcut.id),
+      endingsSeen: [...this.endingsSeen],
+    };
+  }
+
+  restoreSaveState(state: ProgressionSaveState, player: PlayerController): void {
+    this.ash = Math.max(0, Math.floor(state.ash));
+    this.recoveryAsh = Math.max(0, Math.floor(state.recoveryAsh));
+    this.recoveryPosition = state.recoveryPosition
+      ? new THREE.Vector3(state.recoveryPosition[0], state.recoveryPosition[1], state.recoveryPosition[2])
+      : null;
+    this.recoveryRoot.visible = Boolean(this.recoveryPosition && this.recoveryAsh > 0);
+    if (this.recoveryPosition) this.recoveryRoot.position.copy(this.recoveryPosition).add(new THREE.Vector3(0, 0.5, 0));
+    const activated = new Set(state.activatedShrineIds);
+    this.shrines.forEach((shrine, index) => {
+      shrine.activated = index === 0 || activated.has(shrine.id);
+    });
+    this.activeShrine = this.shrines.find((shrine) => shrine.id === state.activeShrineId) ?? this.shrines[0]!;
+    this.activeShrine.activated = true;
+    const opened = new Set(state.openedShortcutIds);
+    for (const shortcut of this.shortcuts) this.applyShortcutState(shortcut, opened.has(shortcut.id));
+    this.endingsSeen.clear();
+    for (const ending of state.endingsSeen) {
+      if (ending === 'inherit' || ending === 'sever') this.endingsSeen.add(ending);
+    }
+    this.endingChoice = null;
+    this.endingTimer = 0;
+    this.deathHandled = false;
+    this.respawnTimer = 0;
+    this.saveRequested = false;
+    this.interaction = null;
+    player.respawnAt(this.activeShrine.respawn);
+    player.refillFlasks();
+    this.showNotice(`${this.activeShrine.name}의 기록을 불러왔습니다`, 2.35);
   }
 
   isEndingLocked(): boolean {
@@ -377,6 +475,7 @@ export class ProgressionDirector {
 
   private beginEnding(choice: EndingChoice): void {
     this.endingChoice = choice;
+    this.endingsSeen.add(choice);
     this.endingTimer = 0;
     this.interaction = null;
     this.notice = null;
@@ -478,6 +577,7 @@ export class ProgressionDirector {
     combat.resetAtRest();
     this.audio.checkpoint();
     this.showNotice(`${shrine.name}에 서약을 새겼습니다`, 2.55);
+    this.saveRequested = true;
   }
 
   private beginDeath(player: PlayerController): void {
@@ -495,6 +595,7 @@ export class ProgressionDirector {
       this.ash = 0;
     }
     this.audio.death();
+    this.saveRequested = true;
     this.showNotice('서약이 꺾였습니다', GAME_CONFIG.player.respawnDelay);
   }
 
@@ -525,6 +626,7 @@ export class ProgressionDirector {
       this.recoveryPosition = null;
       this.recoveryRoot.visible = false;
       this.audio.collectAsh();
+      this.saveRequested = true;
       this.showNotice(`잃어버린 재 ${recovered}을 회수했습니다`, 2.25);
     }
   }
@@ -543,6 +645,17 @@ export class ProgressionDirector {
         ring.rotation.z += delta * (index === 0 ? 0.35 : -0.22);
       });
     }
+  }
+
+  private applyShortcutState(shortcut: Shortcut, open: boolean): void {
+    shortcut.open = open;
+    shortcut.progress = open ? 1 : 0;
+    const y = open ? shortcut.openY : shortcut.closedY;
+    shortcut.gate.position.y = y;
+    shortcut.body.setNextKinematicTranslation({ x: shortcut.gate.position.x, y, z: shortcut.gate.position.z });
+    shortcut.body.setTranslation({ x: shortcut.gate.position.x, y, z: shortcut.gate.position.z }, true);
+    shortcut.lever.rotation.z = open ? -1.05 : 0;
+    shortcut.collider.setEnabled(!open);
   }
 
   private updateShortcuts(delta: number): void {

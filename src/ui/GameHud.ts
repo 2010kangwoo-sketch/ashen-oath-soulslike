@@ -128,6 +128,15 @@ export class GameHud {
     window.setTimeout(() => this.root.classList.add('hud-settled'), 4200);
   }
 
+
+  setMenuSuppressed(suppressed: boolean): void {
+    this.root.classList.toggle('menu-suppressed', suppressed);
+  }
+
+  setControlHelpVisible(visible: boolean): void {
+    this.help.classList.toggle('is-hidden', !visible);
+  }
+
   setFps(fps: number): void {
     if (fps > 0) this.fpsStatus.textContent = `${fps} FPS`;
   }

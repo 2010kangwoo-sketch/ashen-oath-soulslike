@@ -27,6 +27,9 @@ export class ThirdPersonCamera {
   private lockBlend: number = 0;
   private cameraImpulse: number = 0;
   private shakeTime: number = 0;
+  private enabled = false;
+  private sensitivityScale = 1;
+  private shakeScale = 1;
 
   constructor(
     private readonly camera: THREE.PerspectiveCamera,
@@ -140,7 +143,19 @@ export class ThirdPersonCamera {
   }
 
   addImpulse(strength: number): void {
-    this.cameraImpulse = Math.max(this.cameraImpulse, strength);
+    this.cameraImpulse = Math.max(this.cameraImpulse, strength * this.shakeScale);
+  }
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    this.mouseDeltaX = 0;
+    this.mouseDeltaY = 0;
+    if (!enabled && document.pointerLockElement === this.canvas) document.exitPointerLock();
+  }
+
+  setControlSettings(sensitivityScale: number, shakeScale: number): void {
+    this.sensitivityScale = THREE.MathUtils.clamp(sensitivityScale, 0.5, 1.6);
+    this.shakeScale = THREE.MathUtils.clamp(shakeScale, 0, 1);
   }
 
   isLocked(): boolean {
@@ -170,16 +185,22 @@ export class ThirdPersonCamera {
   }
 
   private consumeLook(delta: number, gamepadLook: LookAxes): void {
-    this.yaw -= this.mouseDeltaX * GAME_CONFIG.camera.mouseSensitivity;
-    this.pitch += this.mouseDeltaY * GAME_CONFIG.camera.mouseSensitivity;
+    if (!this.enabled) {
+      this.mouseDeltaX = 0;
+      this.mouseDeltaY = 0;
+      return;
+    }
+    this.yaw -= this.mouseDeltaX * GAME_CONFIG.camera.mouseSensitivity * this.sensitivityScale;
+    this.pitch += this.mouseDeltaY * GAME_CONFIG.camera.mouseSensitivity * this.sensitivityScale;
     this.mouseDeltaX = 0;
     this.mouseDeltaY = 0;
-    this.yaw -= gamepadLook.horizontal * GAME_CONFIG.camera.gamepadLookSpeed * delta;
-    this.pitch += gamepadLook.vertical * GAME_CONFIG.camera.gamepadLookSpeed * delta;
+    this.yaw -= gamepadLook.horizontal * GAME_CONFIG.camera.gamepadLookSpeed * delta * this.sensitivityScale;
+    this.pitch += gamepadLook.vertical * GAME_CONFIG.camera.gamepadLookSpeed * delta * this.sensitivityScale;
     this.pitch = THREE.MathUtils.clamp(this.pitch, 0.08, 0.9);
   }
 
   private readonly onClick = (): void => {
+    if (!this.enabled) return;
     if (!this.pointerLocked && document.pointerLockElement === null) {
       void this.canvas.requestPointerLock();
     }
@@ -192,12 +213,13 @@ export class ThirdPersonCamera {
   };
 
   private readonly onMouseMove = (event: MouseEvent): void => {
-    if (!this.pointerLocked) return;
+    if (!this.enabled || !this.pointerLocked) return;
     this.mouseDeltaX += event.movementX;
     this.mouseDeltaY += event.movementY;
   };
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    if (!this.enabled) return;
     if (this.pointerLocked || (event.button !== 0 && event.button !== 2)) return;
     this.dragging = true;
     this.pointerId = event.pointerId;
@@ -224,6 +246,7 @@ export class ThirdPersonCamera {
   };
 
   private readonly onWheel = (event: WheelEvent): void => {
+    if (!this.enabled) return;
     event.preventDefault();
     this.distance = THREE.MathUtils.clamp(
       this.distance + event.deltaY * GAME_CONFIG.camera.zoomSensitivity,

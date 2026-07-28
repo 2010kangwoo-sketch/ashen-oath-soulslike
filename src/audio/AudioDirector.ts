@@ -6,17 +6,30 @@ export class AudioDirector {
   private noiseBuffer: AudioBuffer | null = null;
   private ambientTimer = 7;
   private unlocked = false;
+  private masterVolume = 0.8;
+  private ducked = false;
 
   unlock(): void {
     if (!this.context) {
       this.context = new AudioContext({ latencyHint: 'interactive' });
       this.master = this.context.createGain();
-      this.master.gain.value = 0.52;
+      this.master.gain.value = this.getTargetGain();
       this.master.connect(this.context.destination);
       this.noiseBuffer = this.createNoiseBuffer(this.context);
     }
     if (this.context.state === 'suspended') void this.context.resume();
     this.unlocked = true;
+  }
+
+
+  setMasterVolume(volume: number): void {
+    this.masterVolume = Math.min(1, Math.max(0, volume));
+    this.updateMasterGain(0.08);
+  }
+
+  setDucked(ducked: boolean): void {
+    this.ducked = ducked;
+    this.updateMasterGain(0.12);
   }
 
   update(delta: number): void {
@@ -245,6 +258,17 @@ export class AudioDirector {
     const now = ctx.currentTime;
     const start = weight === 'heavy' ? 210 : weight === 'medium' ? 270 : 330;
     this.playOscillator(now, 'triangle', start, start * 0.72, weight === 'heavy' ? 0.26 : 0.16, 0.025);
+  }
+
+  private updateMasterGain(duration: number): void {
+    if (!this.context || !this.master) return;
+    const now = this.context.currentTime;
+    this.master.gain.cancelScheduledValues(now);
+    this.master.gain.setTargetAtTime(this.getTargetGain(), now, duration);
+  }
+
+  private getTargetGain(): number {
+    return this.masterVolume * 0.65 * (this.ducked ? 0.28 : 1);
   }
 
   private readyContext(): AudioContext | null {

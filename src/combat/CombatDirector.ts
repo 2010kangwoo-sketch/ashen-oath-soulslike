@@ -31,6 +31,12 @@ export interface BossWorldState {
   readonly oathkeeperDefeated: boolean;
 }
 
+export interface CombatSaveState {
+  readonly varkanDefeated: boolean;
+  readonly widowDefeated: boolean;
+  readonly oathkeeperDefeated: boolean;
+}
+
 export class CombatDirector {
   private readonly regularEnemies: CombatEnemy[];
   private readonly varkan: GatewardenVarkan;
@@ -202,6 +208,27 @@ export class CombatDirector {
     else this.widow.keepDefeated();
     if (!this.oathkeeperDefeated) this.oathkeeper.resetEncounter();
     else this.oathkeeper.keepDefeated();
+  }
+
+
+  getSaveState(): CombatSaveState {
+    return {
+      varkanDefeated: this.varkanDefeated,
+      widowDefeated: this.widowDefeated,
+      oathkeeperDefeated: this.oathkeeperDefeated,
+    };
+  }
+
+  restoreSaveState(state: CombatSaveState): void {
+    this.varkanDefeated = Boolean(state.varkanDefeated);
+    this.widowDefeated = Boolean(state.widowDefeated);
+    this.oathkeeperDefeated = Boolean(state.oathkeeperDefeated);
+    this.presentedBoss = this.oathkeeperDefeated
+      ? this.oathkeeper
+      : this.widowDefeated
+        ? this.widow
+        : this.varkan;
+    this.resetAtRest();
   }
 
   consumeAshReward(): number {
