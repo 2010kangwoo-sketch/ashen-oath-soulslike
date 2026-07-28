@@ -5,6 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import type { BossSnapshot } from '../combat/CombatTypes';
+import type { EndingChoice } from '../progression/ProgressionDirector';
 
 const CinematicShader = {
   uniforms: {
@@ -14,6 +15,8 @@ const CinematicShader = {
     vignetteStrength: { value: 0.52 },
     encounterIntensity: { value: 0 },
     mechanicDanger: { value: 0 },
+    endingIntensity: { value: 0 },
+    endingSever: { value: 0 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -29,6 +32,8 @@ const CinematicShader = {
     uniform float vignetteStrength;
     uniform float encounterIntensity;
     uniform float mechanicDanger;
+    uniform float endingIntensity;
+    uniform float endingSever;
     varying vec2 vUv;
 
     float hash(vec2 p) {
@@ -51,6 +56,10 @@ const CinematicShader = {
       color = mix(vec3(luma), color, saturation);
       color = (color - 0.5) * (1.055 + encounterIntensity * 0.025) + 0.5;
       color += vec3(0.018, -0.004, -0.006) * mechanicDanger;
+      vec3 endingWarm = vec3(0.075, 0.038, -0.012);
+      vec3 endingCold = vec3(-0.035, -0.012, 0.038);
+      color += mix(endingWarm, endingCold, endingSever) * endingIntensity;
+      color = mix(color, vec3(dot(color, vec3(0.28, 0.62, 0.1))), endingIntensity * (0.18 + endingSever * 0.22));
       float vignette = smoothstep(1.35, 0.28, dot(centered, centered));
       color *= mix(1.0 - vignetteStrength - mechanicDanger * 0.08, 1.0, vignette);
       float grain = hash(vUv * vec2(1413.0, 911.0) + time * 0.07) - 0.5;
@@ -58,6 +67,7 @@ const CinematicShader = {
       float letterbox = smoothstep(0.0, 0.035, min(vUv.y, 1.0 - vUv.y));
       float letterboxMix = clamp(letterbox + (1.0 - encounterIntensity), 0.0, 1.0);
       color *= mix(0.88, 1.0, letterboxMix);
+      color *= 1.0 - endingIntensity * 0.14;
       gl_FragColor = vec4(max(color, 0.0), 1.0);
     }
   `,
@@ -71,6 +81,9 @@ export class RenderPipeline {
   private dangerTarget = 0;
   private encounterIntensity = 0;
   private dangerIntensity = 0;
+  private endingTarget = 0;
+  private endingIntensity = 0;
+  private endingSever = 0;
 
   constructor(
     renderer: THREE.WebGLRenderer,
@@ -96,13 +109,21 @@ export class RenderPipeline {
     this.dangerTarget = snapshot.active && snapshot.mechanicDanger ? 1 : 0;
   }
 
+  setEndingState(active: boolean, choice: EndingChoice | null): void {
+    this.endingTarget = active ? 1 : 0;
+    this.endingSever = choice === 'sever' ? 1 : 0;
+  }
+
   render(delta: number): void {
     this.encounterIntensity += (this.encounterTarget - this.encounterIntensity) * (1 - Math.exp(-3.6 * delta));
     this.dangerIntensity += (this.dangerTarget - this.dangerIntensity) * (1 - Math.exp(-8 * delta));
+    this.endingIntensity += (this.endingTarget - this.endingIntensity) * (1 - Math.exp(-1.35 * delta));
     this.cinematicPass.uniforms['time']!.value += delta;
     this.cinematicPass.uniforms['encounterIntensity']!.value = this.encounterIntensity;
     this.cinematicPass.uniforms['mechanicDanger']!.value = this.dangerIntensity;
-    this.bloomPass.strength = 0.18 + this.encounterIntensity * 0.14 + this.dangerIntensity * 0.16;
+    this.cinematicPass.uniforms['endingIntensity']!.value = this.endingIntensity;
+    this.cinematicPass.uniforms['endingSever']!.value = this.endingSever;
+    this.bloomPass.strength = 0.18 + this.encounterIntensity * 0.14 + this.dangerIntensity * 0.16 + this.endingIntensity * 0.08;
     this.bloomPass.radius = 0.42 + this.dangerIntensity * 0.08;
     this.composer.render(delta);
   }

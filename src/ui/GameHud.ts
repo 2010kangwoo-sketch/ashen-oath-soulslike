@@ -1,7 +1,7 @@
 import type { Camera } from 'three';
 import type { BossPresentationEvent, BossSnapshot, LockTargetSnapshot } from '../combat/CombatTypes';
 import type { PlayerMotionState } from '../player/PlayerController';
-import type { ProgressionSnapshot } from '../progression/ProgressionDirector';
+import type { EndingSnapshot, ProgressionSnapshot } from '../progression/ProgressionDirector';
 
 export class GameHud {
   private readonly root: HTMLElement;
@@ -53,6 +53,13 @@ export class GameHud {
   private readonly raidMechanicName: HTMLElement;
   private readonly raidMechanicHint: HTMLElement;
   private readonly raidMechanicFill: HTMLElement;
+  private readonly endingPanel: HTMLElement;
+  private readonly endingKicker: HTMLElement;
+  private readonly endingTitle: HTMLElement;
+  private readonly endingSubtitle: HTMLElement;
+  private readonly endingQuote: HTMLElement;
+  private readonly endingCredits: HTMLElement;
+  private readonly endingCreditRoll: HTMLElement;
   private currentArea = '';
   private bossActive = false;
   private debugVisible = false;
@@ -107,6 +114,13 @@ export class GameHud {
     this.raidMechanicName = this.requireElement('raid-mechanic-name');
     this.raidMechanicHint = this.requireElement('raid-mechanic-hint');
     this.raidMechanicFill = this.requireElement('raid-mechanic-fill');
+    this.endingPanel = this.requireElement('ending-panel');
+    this.endingKicker = this.requireElement('ending-kicker');
+    this.endingTitle = this.requireElement('ending-title');
+    this.endingSubtitle = this.requireElement('ending-subtitle');
+    this.endingQuote = this.requireElement('ending-quote');
+    this.endingCredits = this.requireElement('ending-credits');
+    this.endingCreditRoll = this.requireElement('ending-credit-roll');
   }
 
   reveal(): void {
@@ -176,10 +190,11 @@ export class GameHud {
       this.bossHealthFill.style.transform = `scaleX(${clamp01(snapshot.healthRatio)})`;
       this.bossPoiseFill.style.transform = `scaleX(${clamp01(snapshot.poiseRatio)})`;
       this.bossShieldFill.style.transform = `scaleX(${clamp01(snapshot.shieldRatio)})`;
-      this.bossShieldTrack.classList.toggle('is-hidden', snapshot.phase !== 1 || snapshot.shieldRatio <= 0);
+      this.bossShieldTrack.classList.toggle('is-hidden', snapshot.shieldRatio <= 0);
       this.bossSecondaryLabel.textContent = snapshot.secondaryLabel ?? '보조 내구도';
-      this.bossPhaseLabel.textContent = snapshot.phaseLabel ?? (snapshot.phase === 1 ? 'I' : 'II');
-      this.root.classList.toggle('boss-phase-two', snapshot.phase === 2 || snapshot.phaseTransition);
+      this.bossPhaseLabel.textContent = snapshot.phaseLabel ?? (snapshot.phase === 1 ? 'I' : snapshot.phase === 2 ? 'II' : 'III');
+      this.root.classList.toggle('boss-phase-two', snapshot.phase === 2 || (snapshot.phaseTransition && snapshot.phase < 3));
+      this.root.classList.toggle('boss-phase-three', snapshot.phase === 3);
       const mechanicVisible = Boolean(snapshot.mechanicName);
       this.raidMechanic.classList.toggle('is-hidden', !mechanicVisible);
       this.raidMechanic.classList.toggle('danger', snapshot.mechanicDanger ?? false);
@@ -189,7 +204,7 @@ export class GameHud {
         this.raidMechanicFill.style.transform = `scaleX(${clamp01(snapshot.mechanicProgress ?? 0)})`;
       }
     } else {
-      this.root.classList.remove('boss-phase-two');
+      this.root.classList.remove('boss-phase-two', 'boss-phase-three');
       this.raidMechanic.classList.add('is-hidden');
     }
 
@@ -201,6 +216,10 @@ export class GameHud {
       this.bossPhaseKicker.textContent = snapshot.transitionKicker ?? '두 번째 서약';
       this.bossPhaseTitle.textContent = snapshot.transitionTitle ?? snapshot.epithet;
       this.showTimedPanel(this.bossPhaseBanner, 2300);
+    } else if (event === 'phase3') {
+      this.bossPhaseKicker.textContent = snapshot.transitionKicker ?? '마지막 서약';
+      this.bossPhaseTitle.textContent = snapshot.transitionTitle ?? snapshot.epithet;
+      this.showTimedPanel(this.bossPhaseBanner, 2700);
     } else if (event === 'defeated') {
       this.bossVictoryKicker.textContent = snapshot.victoryKicker ?? '전투가 끝났습니다';
       this.bossVictoryTitle.textContent = snapshot.victoryTitle ?? `${snapshot.name} 격파`;
@@ -229,6 +248,7 @@ export class GameHud {
     this.noticePanel.classList.toggle('is-hidden', !snapshot.notice);
     if (snapshot.notice) this.noticePanel.textContent = snapshot.notice;
     this.objectiveText.textContent = snapshot.objective;
+    this.setEnding(snapshot.ending);
     this.deathProgressFill.style.transform = `scaleX(${clamp01(snapshot.deathProgress)})`;
     if (snapshot.areaName !== this.currentArea) {
       this.currentArea = snapshot.areaName;
@@ -237,6 +257,23 @@ export class GameHud {
       void this.areaTitle.offsetWidth;
       this.areaTitle.style.animation = '';
     }
+  }
+
+
+  private setEnding(snapshot: EndingSnapshot): void {
+    this.endingPanel.classList.toggle('is-hidden', !snapshot.active);
+    this.root.classList.toggle('ending-active', snapshot.active);
+    if (!snapshot.active || !snapshot.choice) return;
+    const inherit = snapshot.choice === 'inherit';
+    this.endingPanel.classList.toggle('ending-inherit', inherit);
+    this.endingPanel.classList.toggle('ending-sever', !inherit);
+    this.endingKicker.textContent = inherit ? 'THE OATH ENDURES' : 'THE OATH IS BROKEN';
+    this.endingTitle.textContent = snapshot.title;
+    this.endingSubtitle.textContent = snapshot.subtitle;
+    this.endingQuote.textContent = snapshot.quote;
+    const progress = clamp01(snapshot.creditsProgress);
+    this.endingCredits.style.opacity = String(clamp01((progress - 0.02) * 3.2));
+    this.endingCreditRoll.style.transform = `translate(-50%, ${THREELESS_LERP(34, -38, progress)}vh)`;
   }
 
   setPointerLocked(locked: boolean): void {
@@ -271,6 +308,10 @@ export class GameHud {
     if (!element) throw new Error(`Required UI element is missing: #${id}`);
     return element;
   }
+}
+
+function THREELESS_LERP(start: number, end: number, amount: number): number {
+  return start + (end - start) * amount;
 }
 
 function clamp01(value: number): number {

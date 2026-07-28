@@ -33,7 +33,7 @@ export interface LockTargetSnapshot {
   readonly active: boolean;
 }
 
-export type BossPresentationEvent = 'intro' | 'phase2' | 'defeated';
+export type BossPresentationEvent = 'intro' | 'phase2' | 'phase3' | 'defeated';
 
 export interface BossSnapshot {
   readonly name: string;
@@ -41,7 +41,7 @@ export interface BossSnapshot {
   readonly healthRatio: number;
   readonly poiseRatio: number;
   readonly shieldRatio: number;
-  readonly phase: 1 | 2;
+  readonly phase: 1 | 2 | 3;
   readonly active: boolean;
   readonly intro: boolean;
   readonly phaseTransition: boolean;

@@ -34,6 +34,12 @@ export class CathedralApproach {
   private readonly widowFogGroup = new THREE.Group();
   private readonly widowExitGate = new THREE.Group();
   private readonly widowWebs: THREE.Mesh[] = [];
+  private readonly oathFogPlanes: THREE.Mesh[] = [];
+  private readonly oathFogGroup = new THREE.Group();
+  private readonly oathArenaSigils: THREE.Mesh[] = [];
+  private readonly oathCrownFragments: THREE.Mesh[] = [];
+  private readonly endingCore = new THREE.Group();
+  private readonly endingCoreLight = new THREE.PointLight(0xc16f4e, 0, 24, 1.5);
   private bossFogBody!: RigidBody;
   private bossFogCollider!: Collider;
   private bossExitBody!: RigidBody;
@@ -42,14 +48,20 @@ export class CathedralApproach {
   private widowFogCollider!: Collider;
   private widowExitBody!: RigidBody;
   private widowExitCollider!: Collider;
+  private oathFogBody!: RigidBody;
+  private oathFogCollider!: Collider;
   private bossEncounterActive = false;
   private bossDefeated = false;
   private widowEncounterActive = false;
   private widowDefeated = false;
+  private oathkeeperEncounterActive = false;
+  private oathkeeperDefeated = false;
   private bossFogBlend = 0;
   private bossExitBlend = 0;
   private widowFogBlend = 0;
   private widowExitBlend = 0;
+  private oathFogBlend = 0;
+  private endingCoreBlend = 0;
   private elapsed = 0;
 
   constructor(scene: THREE.Scene, private readonly physics: PhysicsWorld) {
@@ -68,6 +80,7 @@ export class CathedralApproach {
     this.createAshenAltar();
     this.createBossArena();
     this.createWidowArena();
+    this.createOathkeeperArena();
     this.createReturnPassages();
     this.createRubbleAndWear();
     this.createDynamicDebris();
@@ -86,6 +99,7 @@ export class CathedralApproach {
     }
     this.updateBossArena(delta);
     this.updateWidowArena(delta);
+    this.updateOathkeeperArena(delta);
     for (const debris of this.dynamicDebris) {
       debris.cooldown = Math.max(0, debris.cooldown - delta);
       const position = debris.body.translation();
@@ -106,11 +120,15 @@ export class CathedralApproach {
     varkanDefeated: boolean,
     widowActive: boolean,
     widowDefeated: boolean,
+    oathkeeperActive: boolean,
+    oathkeeperDefeated: boolean,
   ): void {
     this.bossEncounterActive = varkanActive;
     this.bossDefeated = varkanDefeated;
     this.widowEncounterActive = widowActive;
     this.widowDefeated = widowDefeated;
+    this.oathkeeperEncounterActive = oathkeeperActive;
+    this.oathkeeperDefeated = oathkeeperDefeated;
   }
 
   applyPlayerInfluence(position: THREE.Vector3, velocity: THREE.Vector3): void {
@@ -681,6 +699,188 @@ export class CathedralApproach {
       const phase = Number(web.userData.phase ?? index);
       web.rotation.y = Math.sin(this.elapsed * 0.42 + phase) * 0.08;
       web.scale.y = 1 + Math.sin(this.elapsed * 0.9 + phase) * 0.025;
+    });
+  }
+
+  private createOathkeeperArena(): void {
+    // The final route compresses into a ceremonial bridge before opening into a
+    // duelling court. The arena is broad enough for raid telegraphs but keeps the
+    // rival boss at a readable third-person distance.
+    this.addStaticBox('oathkeeper-processional-bridge', [12.5, 1.0, 21], [0, 0.5, -179.4], this.wornStone, undefined, true);
+    this.addStaticBox('oathkeeper-bridge-west-rail', [1.0, 4.2, 21], [-6.7, 2.1, -179.4], this.basalt, undefined, true);
+    this.addStaticBox('oathkeeper-bridge-east-rail', [1.0, 4.2, 21], [6.7, 2.1, -179.4], this.basalt, undefined, true);
+    this.addStaticBox('oathkeeper-arena-floor', [34, 1.2, 36], [0, 0.6, -207.5], this.paleStone, undefined, true);
+    this.addStaticBox('oathkeeper-arena-west-wall', [1.5, 11.0, 37], [-17.2, 5.5, -207.5], this.basalt, undefined, true);
+    this.addStaticBox('oathkeeper-arena-east-wall', [1.5, 11.0, 37], [17.2, 5.5, -207.5], this.basalt, undefined, true);
+    this.addStaticBox('oathkeeper-arena-south-wall-left', [11.8, 11.0, 1.5], [-10.7, 5.5, -189.6], this.basalt, undefined, true);
+    this.addStaticBox('oathkeeper-arena-south-wall-right', [11.8, 11.0, 1.5], [10.7, 5.5, -189.6], this.basalt, undefined, true);
+    this.addStaticBox('oathkeeper-arena-north-wall-left', [12.0, 11.0, 1.5], [-11.0, 5.5, -225.4], this.basalt, undefined, true);
+    this.addStaticBox('oathkeeper-arena-north-wall-right', [12.0, 11.0, 1.5], [11.0, 5.5, -225.4], this.basalt, undefined, true);
+
+    const ringMaterial = this.bronze.clone();
+    ringMaterial.emissive = new THREE.Color(0x4a1715);
+    ringMaterial.emissiveIntensity = 0.45;
+    const outerRing = new THREE.Mesh(new THREE.RingGeometry(10.8, 12.7, 112, 3), this.wornStone);
+    outerRing.rotation.x = -Math.PI / 2;
+    outerRing.position.set(0, 1.22, -207.5);
+    outerRing.receiveShadow = true;
+    this.group.add(outerRing);
+    const innerRing = new THREE.Mesh(new THREE.RingGeometry(4.1, 4.45, 80), ringMaterial);
+    innerRing.rotation.x = -Math.PI / 2;
+    innerRing.position.set(0, 1.245, -207.5);
+    this.group.add(innerRing);
+    this.oathArenaSigils.push(innerRing);
+
+    for (let index = 0; index < 16; index += 1) {
+      const angle = (index / 16) * Math.PI * 2;
+      const radial = index % 2 === 0 ? 8.2 : 11.3;
+      const rune = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.035, 3.3), ringMaterial.clone());
+      rune.position.set(Math.sin(angle) * radial, 1.25, -207.5 + Math.cos(angle) * radial);
+      rune.rotation.y = angle;
+      rune.userData.phase = angle;
+      this.group.add(rune);
+      this.oathArenaSigils.push(rune);
+    }
+
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (index / 8) * Math.PI * 2;
+      const x = Math.sin(angle) * 13.3;
+      const z = -207.5 + Math.cos(angle) * 14.1;
+      this.createColumn(`oathkeeper-arena-column-${index}`, new THREE.Vector3(x, 1.2, z), 8.7, 0.72, index === 1 || index === 5);
+      const mirror = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.1, 4.7, 1, 1),
+        new THREE.MeshStandardMaterial({
+          color: 0x393d42,
+          roughness: 0.16,
+          metalness: 0.92,
+          emissive: 0x351114,
+          emissiveIntensity: 0.42,
+          side: THREE.DoubleSide,
+        }),
+      );
+      mirror.position.set(x * 0.91, 4.7, -207.5 + (z + 207.5) * 0.91);
+      mirror.rotation.y = angle + Math.PI;
+      mirror.rotation.z = (index % 2 === 0 ? 1 : -1) * 0.08;
+      mirror.castShadow = true;
+      this.group.add(mirror);
+      this.cameraCollisionObjects.push(mirror);
+    }
+
+    const throneDais = this.addStaticBox('oathkeeper-throne-dais', [10.8, 1.0, 5.2], [0, 1.1, -222.4], this.wornStone, undefined, true);
+    throneDais.receiveShadow = true;
+    for (let step = 0; step < 3; step += 1) {
+      this.addStaticBox(
+        `oathkeeper-throne-step-${step}`,
+        [8.8 - step * 1.2, 0.34, 1.2],
+        [0, 0.2 + step * 0.34, -219.3 - step * 0.95],
+        step % 2 === 0 ? this.paleStone : this.wornStone,
+        undefined,
+        true,
+      );
+    }
+
+    this.endingCore.position.set(0, 2.8, -223.1);
+    this.endingCore.visible = false;
+    const core = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.78, 2),
+      new THREE.MeshStandardMaterial({
+        color: 0xb88769,
+        roughness: 0.24,
+        metalness: 0.46,
+        emissive: 0x9a2b22,
+        emissiveIntensity: 0.2,
+        transparent: true,
+        opacity: 0.74,
+      }),
+    );
+    core.castShadow = true;
+    this.endingCore.add(core);
+    for (let index = 0; index < 9; index += 1) {
+      const angle = (index / 9) * Math.PI * 2;
+      const fragment = new THREE.Mesh(
+        new THREE.ConeGeometry(0.12, 0.72 + (index % 3) * 0.16, 6),
+        ringMaterial.clone(),
+      );
+      fragment.position.set(Math.sin(angle) * 1.45, Math.sin(index * 1.6) * 0.35, Math.cos(angle) * 1.45);
+      fragment.rotation.z = -Math.sin(angle) * 0.72;
+      fragment.rotation.x = Math.cos(angle) * 0.72;
+      fragment.userData.phase = angle;
+      this.endingCore.add(fragment);
+      this.oathCrownFragments.push(fragment);
+    }
+    this.endingCore.add(this.endingCoreLight);
+    this.group.add(this.endingCore);
+
+    const fogMaterial = new THREE.MeshBasicMaterial({
+      color: 0xc69a91,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.oathFogGroup.position.set(0, 4.1, -190.1);
+    this.oathFogGroup.visible = false;
+    for (let index = 0; index < 11; index += 1) {
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(12.2, 6.4, 12, 6), fogMaterial.clone());
+      plane.position.z = (index - 5) * 0.06;
+      plane.userData.phase = index * 0.61;
+      this.oathFogGroup.add(plane);
+      this.oathFogPlanes.push(plane);
+    }
+    this.group.add(this.oathFogGroup);
+    this.oathFogBody = this.physics.world.createRigidBody(
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 4.1, -190.1),
+    );
+    this.oathFogCollider = this.physics.world.createCollider(
+      RAPIER.ColliderDesc.cuboid(6.1, 3.2, 0.28).setFriction(0.9),
+      this.oathFogBody,
+    );
+    this.oathFogCollider.setEnabled(false);
+
+    this.atmosphere.addTorch(new THREE.Vector3(-13.0, 4.0, -197.0), 68);
+    this.atmosphere.addTorch(new THREE.Vector3(13.0, 4.0, -197.0), 68);
+    this.atmosphere.addTorch(new THREE.Vector3(-13.0, 4.0, -217.5), 72);
+    this.atmosphere.addTorch(new THREE.Vector3(13.0, 4.0, -217.5), 72);
+  }
+
+  private updateOathkeeperArena(delta: number): void {
+    const fogTarget = this.oathkeeperEncounterActive && !this.oathkeeperDefeated ? 1 : 0;
+    this.oathFogBlend += (fogTarget - this.oathFogBlend) * (1 - Math.exp(-6.6 * delta));
+    this.oathFogGroup.visible = this.oathFogBlend > 0.015;
+    this.oathFogPlanes.forEach((plane, index) => {
+      const phase = Number(plane.userData.phase ?? index);
+      const material = plane.material as THREE.MeshBasicMaterial;
+      material.opacity = this.oathFogBlend * (0.09 + (index % 4) * 0.03);
+      plane.position.x = Math.sin(this.elapsed * (0.75 + index * 0.02) + phase) * 0.32;
+      plane.scale.y = 1 + Math.sin(this.elapsed * 1.25 + phase) * 0.06;
+    });
+    this.oathFogCollider.setEnabled(fogTarget > 0.5);
+
+    const coreTarget = this.oathkeeperDefeated ? 1 : 0;
+    this.endingCoreBlend += (coreTarget - this.endingCoreBlend) * (1 - Math.exp(-2.8 * delta));
+    this.endingCore.visible = this.endingCoreBlend > 0.01;
+    this.endingCore.scale.setScalar(0.75 + this.endingCoreBlend * 0.25);
+    this.endingCore.rotation.y += delta * (0.18 + this.endingCoreBlend * 0.42);
+    const coreMesh = this.endingCore.children[0] as THREE.Mesh;
+    const coreMaterial = coreMesh.material as THREE.MeshStandardMaterial;
+    coreMaterial.emissiveIntensity = 0.2 + this.endingCoreBlend * (2.2 + Math.sin(this.elapsed * 3.4) * 0.35);
+    coreMaterial.opacity = 0.32 + this.endingCoreBlend * 0.62;
+    this.endingCoreLight.intensity = this.endingCoreBlend * (34 + Math.sin(this.elapsed * 4.1) * 5);
+
+    this.oathArenaSigils.forEach((sigil, index) => {
+      const material = sigil.material as THREE.MeshStandardMaterial;
+      const phase = Number(sigil.userData.phase ?? index * 0.4);
+      const activeGlow = this.oathkeeperEncounterActive ? 0.72 : this.oathkeeperDefeated ? 1.15 : 0.24;
+      material.emissiveIntensity = activeGlow + Math.sin(this.elapsed * (1.4 + index * 0.015) + phase) * 0.18;
+    });
+    this.oathCrownFragments.forEach((fragment, index) => {
+      const phase = Number(fragment.userData.phase ?? index);
+      const radius = 1.25 + this.endingCoreBlend * 0.45;
+      fragment.position.x = Math.sin(this.elapsed * 0.62 + phase) * radius;
+      fragment.position.z = Math.cos(this.elapsed * 0.62 + phase) * radius;
+      fragment.position.y = Math.sin(this.elapsed * 1.3 + phase) * (0.22 + this.endingCoreBlend * 0.24);
+      fragment.rotation.y += delta * (0.5 + index * 0.04);
     });
   }
 

@@ -6,6 +6,17 @@ import { GAME_CONFIG } from '../config/GameConfig';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import type { PlayerController } from '../player/PlayerController';
 
+export type EndingChoice = 'inherit' | 'sever';
+
+export interface EndingSnapshot {
+  readonly active: boolean;
+  readonly choice: EndingChoice | null;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly quote: string;
+  readonly creditsProgress: number;
+}
+
 export interface ProgressionSnapshot {
   readonly ash: number;
   readonly flaskCharges: number;
@@ -16,6 +27,7 @@ export interface ProgressionSnapshot {
   readonly objective: string;
   readonly deathProgress: number;
   readonly recoveringAsh: number;
+  readonly ending: EndingSnapshot;
 }
 
 interface Shrine {
@@ -29,6 +41,15 @@ interface Shrine {
   readonly rings: THREE.Mesh[];
   activated: boolean;
   phase: number;
+}
+
+interface EndingAltar {
+  readonly choice: EndingChoice;
+  readonly name: string;
+  readonly position: THREE.Vector3;
+  readonly root: THREE.Group;
+  readonly core: THREE.Mesh;
+  readonly light: THREE.PointLight;
 }
 
 interface Shortcut {
@@ -49,6 +70,7 @@ interface Shortcut {
 export class ProgressionDirector {
   private readonly shrines: Shrine[] = [];
   private readonly shortcuts: Shortcut[] = [];
+  private readonly endingAltars: EndingAltar[] = [];
   private readonly playerPosition = new THREE.Vector3();
   private readonly recoveryRoot = new THREE.Group();
   private readonly recoveryCore: THREE.Mesh;
@@ -65,6 +87,8 @@ export class ProgressionDirector {
   private areaName = '대성당 진입로';
   private objective = '봉인된 대성당의 뒤편으로 향하라';
   private time = 0;
+  private endingChoice: EndingChoice | null = null;
+  private endingTimer = 0;
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -73,6 +97,7 @@ export class ProgressionDirector {
   ) {
     this.createShrines();
     this.createShortcuts();
+    this.createEndingAltars();
     const recoveryMaterial = new THREE.MeshStandardMaterial({
       color: 0xd1b77b,
       emissive: 0x8d5a22,
@@ -121,6 +146,12 @@ export class ProgressionDirector {
     this.updateShortcuts(delta);
     this.updateRecovery(delta, player);
     this.updateArea(this.playerPosition, combat);
+    this.updateEnding(delta, combat);
+
+    if (this.endingChoice) {
+      this.interaction = null;
+      return;
+    }
 
     if (player.isDead()) {
       if (!this.deathHandled) this.beginDeath(player);
@@ -135,11 +166,12 @@ export class ProgressionDirector {
   }
 
   tryInteract(player: PlayerController, combat: CombatDirector): boolean {
-    if (player.isDead()) return false;
+    if (player.isDead() || this.endingChoice) return false;
     player.getWorldPosition(this.playerPosition);
     let closestDistance = Number.POSITIVE_INFINITY;
     let closestShrine: Shrine | null = null;
     let closestShortcut: Shortcut | null = null;
+    let closestEnding: EndingAltar | null = null;
 
     for (const shrine of this.shrines) {
       const distance = shrine.position.distanceTo(this.playerPosition);
@@ -147,6 +179,7 @@ export class ProgressionDirector {
         closestDistance = distance;
         closestShrine = shrine;
         closestShortcut = null;
+        closestEnding = null;
       }
     }
     for (const shortcut of this.shortcuts) {
@@ -156,6 +189,19 @@ export class ProgressionDirector {
         closestDistance = distance;
         closestShrine = null;
         closestShortcut = shortcut;
+        closestEnding = null;
+      }
+    }
+
+    if (combat.areAllBossesDefeated()) {
+      for (const altar of this.endingAltars) {
+        const distance = altar.position.distanceTo(this.playerPosition);
+        if (distance < closestDistance && distance <= GAME_CONFIG.world.interactionRadius + 0.4) {
+          closestDistance = distance;
+          closestShrine = null;
+          closestShortcut = null;
+          closestEnding = altar;
+        }
       }
     }
 
@@ -165,6 +211,10 @@ export class ProgressionDirector {
         return true;
       }
       this.activateShrine(closestShrine, player, combat);
+      return true;
+    }
+    if (closestEnding) {
+      this.beginEnding(closestEnding.choice);
       return true;
     }
     if (closestShortcut) {
@@ -180,6 +230,10 @@ export class ProgressionDirector {
     return false;
   }
 
+  isEndingLocked(): boolean {
+    return this.endingChoice !== null;
+  }
+
   getSnapshot(player: PlayerController): ProgressionSnapshot {
     return {
       ash: this.ash,
@@ -193,6 +247,7 @@ export class ProgressionDirector {
         ? THREE.MathUtils.clamp(this.respawnTimer / GAME_CONFIG.player.respawnDelay, 0, 1)
         : 0,
       recoveringAsh: this.recoveryAsh,
+      ending: this.getEndingSnapshot(),
     };
   }
 
@@ -202,6 +257,7 @@ export class ProgressionDirector {
       { id: 'cloister', name: '종루 회랑', position: new THREE.Vector3(23.2, 3.42, -36.5), respawn: new THREE.Vector3(20.8, 3.56, -34.5) },
       { id: 'altar', name: '잿빛 제단', position: new THREE.Vector3(0, 1.36, -58.8), respawn: new THREE.Vector3(0, 1.62, -56.2) },
       { id: 'widow-nave', name: '끊어진 종의 회랑', position: new THREE.Vector3(-3.2, 1.18, -125.2), respawn: new THREE.Vector3(0, 2.12, -124.2) },
+      { id: 'last-bridge', name: '마지막 서약의 다리', position: new THREE.Vector3(3.2, 1.18, -179.0), respawn: new THREE.Vector3(0, 2.12, -178.0) },
     ] as const;
     definitions.forEach((definition, index) => {
       const root = new THREE.Group();
@@ -256,6 +312,101 @@ export class ProgressionDirector {
       this.shrines.push(shrine);
       if (index === 0) this.activeShrine = shrine;
     });
+  }
+
+  private createEndingAltars(): void {
+    const definitions = [
+      { choice: 'inherit' as const, name: '서약을 계승한다', position: new THREE.Vector3(-3.4, 2.18, -222.0), color: 0xc29562 },
+      { choice: 'sever' as const, name: '서약을 끊는다', position: new THREE.Vector3(3.4, 2.18, -222.0), color: 0xa85b58 },
+    ];
+    for (const definition of definitions) {
+      const root = new THREE.Group();
+      root.name = `ending-altar-${definition.choice}`;
+      root.position.copy(definition.position);
+      root.visible = false;
+      const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x2b2d30, roughness: 0.72, metalness: 0.42 });
+      const coreMaterial = new THREE.MeshStandardMaterial({
+        color: definition.color,
+        emissive: definition.color,
+        emissiveIntensity: 1.2,
+        roughness: 0.24,
+        metalness: 0.36,
+        transparent: true,
+        opacity: 0.88,
+      });
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.92, 0.34, 10), baseMaterial);
+      base.position.y = 0.17;
+      root.add(base);
+      const core = new THREE.Mesh(
+        definition.choice === 'inherit'
+          ? new THREE.OctahedronGeometry(0.42, 1)
+          : new THREE.TetrahedronGeometry(0.48, 1),
+        coreMaterial,
+      );
+      core.position.y = 0.86;
+      core.castShadow = true;
+      root.add(core);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.035, 6, 32), coreMaterial.clone());
+      ring.position.y = 0.45;
+      ring.rotation.x = Math.PI / 2;
+      root.add(ring);
+      const light = new THREE.PointLight(definition.color, 0, 8, 1.7);
+      light.position.y = 1.0;
+      root.add(light);
+      this.scene.add(root);
+      this.endingAltars.push({ ...definition, root, core, light });
+    }
+  }
+
+  private updateEnding(delta: number, combat: CombatDirector): void {
+    const available = combat.areAllBossesDefeated();
+    for (const altar of this.endingAltars) {
+      altar.root.visible = available && !this.endingChoice;
+      if (!altar.root.visible) continue;
+      const phase = altar.choice === 'inherit' ? 0 : Math.PI;
+      altar.root.rotation.y += delta * (altar.choice === 'inherit' ? 0.28 : -0.32);
+      altar.core.position.y = 0.86 + Math.sin(this.time * 2.2 + phase) * 0.12;
+      altar.core.rotation.x += delta * 0.42;
+      altar.core.rotation.z += delta * (altar.choice === 'inherit' ? 0.31 : -0.36);
+      const material = altar.core.material as THREE.MeshStandardMaterial;
+      material.emissiveIntensity = 1.25 + Math.sin(this.time * 3.1 + phase) * 0.32;
+      altar.light.intensity = 12 + Math.sin(this.time * 3.6 + phase) * 2.5;
+    }
+    if (this.endingChoice) this.endingTimer += delta;
+  }
+
+  private beginEnding(choice: EndingChoice): void {
+    this.endingChoice = choice;
+    this.endingTimer = 0;
+    this.interaction = null;
+    this.notice = null;
+    this.noticeTimer = 0;
+    this.audio.ending(choice === 'inherit');
+    for (const altar of this.endingAltars) altar.root.visible = false;
+  }
+
+  private getEndingSnapshot(): EndingSnapshot {
+    if (!this.endingChoice) {
+      return {
+        active: false,
+        choice: null,
+        title: '',
+        subtitle: '',
+        quote: '',
+        creditsProgress: 0,
+      };
+    }
+    const inherit = this.endingChoice === 'inherit';
+    return {
+      active: true,
+      choice: this.endingChoice,
+      title: inherit ? '재 위에 다시 세운 서약' : '마침내 꺼진 마지막 종',
+      subtitle: inherit
+        ? '그녀는 왕관을 쓰지 않았다. 다만 다음 사람이 길을 잃지 않도록 불을 남겼다.'
+        : '그녀는 왕좌와 종과 이름을 함께 끊었다. 새벽은 어떤 명령도 없이 찾아왔다.',
+      quote: inherit ? '끝나지 않는 것은 저주가 아니라, 누군가가 이어 갈 수 있다는 약속이다.' : '부서진 서약의 빈자리에서, 비로소 자신의 목소리가 들렸다.',
+      creditsProgress: THREE.MathUtils.clamp((this.endingTimer - 3.2) / 15, 0, 1),
+    };
   }
 
   private createShortcuts(): void {
@@ -413,6 +564,15 @@ export class ProgressionDirector {
   private updateInteractionPrompt(combat: CombatDirector): void {
     this.interaction = null;
     let bestDistance = Number.POSITIVE_INFINITY;
+    if (combat.areAllBossesDefeated()) {
+      for (const altar of this.endingAltars) {
+        const distance = altar.position.distanceTo(this.playerPosition);
+        if (distance <= GAME_CONFIG.world.interactionRadius + 0.4 && distance < bestDistance) {
+          bestDistance = distance;
+          this.interaction = `E  ${altar.name}`;
+        }
+      }
+    }
     for (const shrine of this.shrines) {
       const distance = shrine.position.distanceTo(this.playerPosition);
       if (distance <= GAME_CONFIG.world.interactionRadius && distance < bestDistance) {
@@ -435,7 +595,19 @@ export class ProgressionDirector {
   }
 
   private updateArea(position: THREE.Vector3, combat: CombatDirector): void {
-    if (position.z < -134) {
+    if (position.z < -190) {
+      this.areaName = '재의 왕좌';
+      this.objective = combat.isOathkeeperDefeated()
+        ? '두 갈래의 마지막 서약 중 하나를 선택하라'
+        : combat.isOathkeeperEncounterActive()
+          ? '재의 서약자를 쓰러뜨려라'
+          : '왕좌 앞에서 마지막 서약과 마주하라';
+    } else if (position.z < -169) {
+      this.areaName = '마지막 서약의 다리';
+      this.objective = combat.isWidowDefeated()
+        ? '서약석을 밝히고 재의 왕좌로 향하라'
+        : '종루의 주인을 쓰러뜨려 길을 열어라';
+    } else if (position.z < -134) {
       this.areaName = '공허한 종의 심장';
       this.objective = combat.isWidowDefeated()
         ? '침묵한 종루 뒤의 열린 길로 향하라'

@@ -4,6 +4,7 @@ import { GAME_CONFIG } from '../config/GameConfig';
 import { AshenHound } from '../enemy/AshenHound';
 import { AshenSentinel } from '../enemy/AshenSentinel';
 import { AshenSpearman } from '../enemy/AshenSpearman';
+import { AshenOathkeeper } from '../enemy/AshenOathkeeper';
 import { BellDevouringWidow } from '../enemy/BellDevouringWidow';
 import { BellKeeper } from '../enemy/BellKeeper';
 import type { BossEnemy } from '../enemy/BossEnemy';
@@ -26,12 +27,15 @@ export interface BossWorldState {
   readonly varkanDefeated: boolean;
   readonly widowActive: boolean;
   readonly widowDefeated: boolean;
+  readonly oathkeeperActive: boolean;
+  readonly oathkeeperDefeated: boolean;
 }
 
 export class CombatDirector {
   private readonly regularEnemies: CombatEnemy[];
   private readonly varkan: GatewardenVarkan;
   private readonly widow: BellDevouringWidow;
+  private readonly oathkeeper: AshenOathkeeper;
   private readonly bosses: BossEnemy[];
   private readonly enemies: CombatEnemy[];
   private readonly effects: CombatEffects;
@@ -50,6 +54,7 @@ export class CombatDirector {
   private readonly rewardedEnemies = new Set<string>();
   private varkanDefeated = false;
   private widowDefeated = false;
+  private oathkeeperDefeated = false;
 
   constructor(
     scene: THREE.Scene,
@@ -71,7 +76,8 @@ export class CombatDirector {
     ];
     this.varkan = new GatewardenVarkan(scene, physics, new THREE.Vector3(0, 3.2, -105.5), audio);
     this.widow = new BellDevouringWidow(scene, physics, new THREE.Vector3(0, 2.78, -151.5), audio);
-    this.bosses = [this.varkan, this.widow];
+    this.oathkeeper = new AshenOathkeeper(scene, physics, new THREE.Vector3(0, 2.72, -207.5), audio);
+    this.bosses = [this.varkan, this.widow, this.oathkeeper];
     this.presentedBoss = this.varkan;
     this.enemies = [...this.regularEnemies, ...this.bosses];
   }
@@ -155,7 +161,9 @@ export class CombatDirector {
       const snapshot = this.lockedEnemy.getLockSnapshot();
       const maximumDistance = this.lockedEnemy === this.widow
         ? GAME_CONFIG.camera.lockMaxDistance * 1.8
-        : GAME_CONFIG.camera.lockMaxDistance * 1.4;
+        : this.lockedEnemy === this.oathkeeper
+          ? GAME_CONFIG.camera.lockMaxDistance * 1.65
+          : GAME_CONFIG.camera.lockMaxDistance * 1.4;
       const distance = snapshot.position.distanceTo(this.playerPosition);
       if (!snapshot.active || distance > maximumDistance) this.lockedEnemy = null;
     }
@@ -172,9 +180,11 @@ export class CombatDirector {
     this.rewardedEnemies.clear();
     this.varkanDefeated = false;
     this.widowDefeated = false;
+    this.oathkeeperDefeated = false;
     for (const enemy of this.regularEnemies) enemy.reset();
     this.varkan.resetEncounter();
     this.widow.resetEncounter();
+    this.oathkeeper.resetEncounter();
   }
 
   resetAtRest(): void {
@@ -190,6 +200,8 @@ export class CombatDirector {
     else this.varkan.keepDefeated();
     if (!this.widowDefeated) this.widow.resetEncounter();
     else this.widow.keepDefeated();
+    if (!this.oathkeeperDefeated) this.oathkeeper.resetEncounter();
+    else this.oathkeeper.keepDefeated();
   }
 
   consumeAshReward(): number {
@@ -254,12 +266,26 @@ export class CombatDirector {
     return this.widowDefeated;
   }
 
+  isOathkeeperEncounterActive(): boolean {
+    return this.oathkeeper.isEncounterActive();
+  }
+
+  isOathkeeperDefeated(): boolean {
+    return this.oathkeeperDefeated;
+  }
+
+  areAllBossesDefeated(): boolean {
+    return this.varkanDefeated && this.widowDefeated && this.oathkeeperDefeated;
+  }
+
   getBossWorldState(): BossWorldState {
     return {
       varkanActive: this.varkan.isEncounterActive(),
       varkanDefeated: this.varkanDefeated,
       widowActive: this.widow.isEncounterActive(),
       widowDefeated: this.widowDefeated,
+      oathkeeperActive: this.oathkeeper.isEncounterActive(),
+      oathkeeperDefeated: this.oathkeeperDefeated,
     };
   }
 
@@ -288,8 +314,16 @@ export class CombatDirector {
     if (this.varkanDefeated
       && !this.widowDefeated
       && this.playerPosition.z <= GAME_CONFIG.world.widowTriggerZ
+      && this.playerPosition.z > GAME_CONFIG.world.oathkeeperTriggerZ
       && this.playerPosition.y > -2) {
       this.activateBoss(this.widow);
+      return;
+    }
+    if (this.widowDefeated
+      && !this.oathkeeperDefeated
+      && this.playerPosition.z <= GAME_CONFIG.world.oathkeeperTriggerZ
+      && this.playerPosition.y > -2) {
+      this.activateBoss(this.oathkeeper);
     }
   }
 
@@ -304,7 +338,7 @@ export class CombatDirector {
     }
     this.lockedEnemy = boss;
     this.executingEnemy = null;
-    this.cameraImpulse = Math.max(this.cameraImpulse, boss === this.widow ? 0.36 : 0.22);
+    this.cameraImpulse = Math.max(this.cameraImpulse, boss === this.oathkeeper ? 0.52 : boss === this.widow ? 0.36 : 0.22);
   }
 
   private coordinateAttackSlots(): void {
@@ -348,7 +382,11 @@ export class CombatDirector {
       enemy.getPosition(this.enemyPosition);
       this.toTarget.copy(this.enemyPosition).sub(playerPosition).setY(0);
       const distance = this.toTarget.length();
-      const maxDistance = enemy === this.widow ? GAME_CONFIG.camera.lockMaxDistance * 1.55 : GAME_CONFIG.camera.lockMaxDistance;
+      const maxDistance = enemy === this.widow
+        ? GAME_CONFIG.camera.lockMaxDistance * 1.55
+        : enemy === this.oathkeeper
+          ? GAME_CONFIG.camera.lockMaxDistance * 1.45
+          : GAME_CONFIG.camera.lockMaxDistance;
       if (distance > maxDistance || distance < 0.001) continue;
       this.toTarget.multiplyScalar(1 / distance);
       const alignment = cameraForward.dot(this.toTarget);
@@ -423,15 +461,16 @@ export class CombatDirector {
     if (this.rewardedEnemies.has(enemy.id)) return;
     this.rewardedEnemies.add(enemy.id);
     this.pendingAshReward += enemy.ashReward;
-    if (enemy === this.varkan || enemy === this.widow) {
+    if (enemy === this.varkan || enemy === this.widow || enemy === this.oathkeeper) {
       this.presentedBoss = enemy as BossEnemy;
       if (enemy === this.varkan) this.varkanDefeated = true;
       if (enemy === this.widow) this.widowDefeated = true;
+      if (enemy === this.oathkeeper) this.oathkeeperDefeated = true;
       this.activeBoss = null;
       this.lockedEnemy = null;
       this.executingEnemy = null;
-      this.cameraImpulse = Math.max(this.cameraImpulse, enemy === this.widow ? 1.55 : 1.25);
-      this.hitStop = Math.max(this.hitStop, enemy === this.widow ? 0.24 : 0.2);
+      this.cameraImpulse = Math.max(this.cameraImpulse, enemy === this.oathkeeper ? 1.85 : enemy === this.widow ? 1.55 : 1.25);
+      this.hitStop = Math.max(this.hitStop, enemy === this.oathkeeper ? 0.3 : enemy === this.widow ? 0.24 : 0.2);
     }
   }
 

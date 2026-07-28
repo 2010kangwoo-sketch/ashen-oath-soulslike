@@ -196,6 +196,41 @@ export class AudioDirector {
     this.playOscillator(now, 'sawtooth', heavy ? 420 : 650, heavy ? 92 : 210, heavy ? 0.3 : 0.13, heavy ? 0.065 : 0.032);
   }
 
+  oathEcho(heavy: boolean): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const gain = heavy ? 0.11 : 0.07;
+    this.playNoiseBurst(now, heavy ? 0.3 : 0.18, 520, heavy ? 8800 : 6500, gain);
+    this.playOscillator(now, 'triangle', heavy ? 760 : 920, heavy ? 180 : 340, heavy ? 0.38 : 0.22, gain * 0.48);
+    this.playOscillator(now + 0.025, 'sine', heavy ? 1140 : 1380, heavy ? 280 : 520, heavy ? 0.3 : 0.18, gain * 0.24);
+  }
+
+  oathCrown(catastrophic: boolean): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const gain = catastrophic ? 0.14 : 0.085;
+    this.playOscillator(now, 'sawtooth', catastrophic ? 96 : 132, catastrophic ? 24 : 54, catastrophic ? 1.15 : 0.62, gain);
+    this.playOscillator(now + 0.04, 'sine', catastrophic ? 288 : 396, catastrophic ? 120 : 198, catastrophic ? 1.35 : 0.76, gain * 0.42);
+    this.playNoiseBurst(now, catastrophic ? 0.72 : 0.36, 28, catastrophic ? 4200 : 2800, gain * 0.72);
+  }
+
+  ending(inherit: boolean): void {
+    const ctx = this.readyContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    if (inherit) {
+      this.playOscillator(now, 'sine', 146, 220, 3.8, 0.062);
+      this.playOscillator(now + 0.2, 'triangle', 220, 330, 3.2, 0.038);
+      this.playOscillator(now + 0.55, 'sine', 438, 550, 2.7, 0.022);
+    } else {
+      this.playNoiseBurst(now, 1.2, 24, 2200, 0.075);
+      this.playOscillator(now, 'sawtooth', 118, 29, 2.4, 0.058);
+      this.playOscillator(now + 1.1, 'sine', 164, 246, 2.8, 0.035);
+    }
+  }
+
   raidWarning(): void {
     const ctx = this.readyContext();
     if (!ctx) return;

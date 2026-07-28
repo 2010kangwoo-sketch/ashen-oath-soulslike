@@ -38,6 +38,7 @@ export class Game {
   private animationFrame = 0;
   private disposed = false;
   private hitStopRemaining = 0;
+  private endingPresented = false;
 
   constructor(private readonly canvas: HTMLCanvasElement) {}
 
@@ -172,7 +173,7 @@ export class Game {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat) return;
-    if (event.code === 'F8') {
+    if (event.code === 'F8' && !this.progression?.isEndingLocked()) {
       this.player.reset();
       this.combat.reset();
     }
@@ -195,14 +196,17 @@ export class Game {
     this.input.update();
     this.cameraRig.copyPlanarForward(this.planarForward);
     this.cameraRig.copyPlanarRight(this.planarRight);
-    this.combat.handleTargeting(this.input, this.player, this.planarForward);
-    if (this.input.consumeAction('interact')) {
-      const executed = this.combat.tryExecution(this.player);
-      if (!executed) this.progression.tryInteract(this.player, this.combat);
+    const endingLocked = this.progression.isEndingLocked();
+    if (!endingLocked) {
+      this.combat.handleTargeting(this.input, this.player, this.planarForward);
+      if (this.input.consumeAction('interact')) {
+        const executed = this.combat.tryExecution(this.player);
+        if (!executed) this.progression.tryInteract(this.player, this.combat);
+      }
     }
 
     this.hitStopRemaining = Math.max(0, this.hitStopRemaining - delta);
-    if (this.hitStopRemaining <= 0) {
+    if (!endingLocked && this.hitStopRemaining <= 0) {
       this.physics.step(delta, (fixedDelta) => {
         const lockTarget = this.combat.getLockTargetPosition();
         this.player.fixedUpdate(fixedDelta, this.input, this.planarForward, this.planarRight, lockTarget);
@@ -220,6 +224,8 @@ export class Game {
       bossWorldState.varkanDefeated,
       bossWorldState.widowActive,
       bossWorldState.widowDefeated,
+      bossWorldState.oathkeeperActive,
+      bossWorldState.oathkeeperDefeated,
     );
     this.world.update(delta);
     this.player.updateVisual(presentationDelta);
@@ -250,7 +256,13 @@ export class Game {
     this.pipeline.setBossState(bossSnapshot);
     this.hud.setLockTarget(this.combat.getLockSnapshot(), this.camera);
     this.hud.setDeathState(this.player.isDead());
-    this.hud.setProgression(this.progression.getSnapshot(this.player));
+    const progressionSnapshot = this.progression.getSnapshot(this.player);
+    this.hud.setProgression(progressionSnapshot);
+    this.pipeline.setEndingState(progressionSnapshot.ending.active, progressionSnapshot.ending.choice);
+    if (progressionSnapshot.ending.active && !this.endingPresented) {
+      this.endingPresented = true;
+      if (document.pointerLockElement) document.exitPointerLock();
+    }
     this.hud.setPointerLocked(this.cameraRig.isLocked());
     this.pipeline.render(delta);
   };
